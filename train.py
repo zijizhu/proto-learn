@@ -57,7 +57,7 @@ if __name__ == "__main__":
     num_classes = 200
 
     backbone, backbone_dim = load_backbone(config.model.backbone)
-    ppnet = ProtoPNet(backbone, config.model.backbone, (2000, 256, 1, 1,), 200)
+    ppnet = ProtoPNet(backbone, config.model.backbone, (2000, 128, 1, 1,), 200)
     criterion = ProtoPNetLoss(l_clst_coef=config.model.l_clst_coef,
                               l_sep_coef=config.model.l_sep_coef,
                               l_l1_coef=config.model.l_l1_coef)
@@ -72,10 +72,10 @@ if __name__ == "__main__":
     joint_param_groups = [
         {'params': ppnet.backbone.parameters(),
          'lr': config.optim.joint.backbone_lr,
-         'weight_decay': 1e-3},
+         'weight_decay': config.optim.joint.backbone_weight_decay},
         {'params': ppnet.proj.parameters(),
          'lr': config.optim.joint.proj_lr,
-         'weight_decay': 1e-3},
+         'weight_decay': config.optim.joint.proj_weight_decay},
         {'params': ppnet.prototype_vectors,
          'lr': config.optim.joint.proto_lr}
     ]
@@ -163,6 +163,8 @@ if __name__ == "__main__":
         if epoch_acc_val > best_val_acc:
             torch.save({k: v.cpu() for k, v in ppnet.state_dict().items()},
                         log_dir / f"ppnet_epoch{epoch}.pth")
+            torch.save({k: v.cpu() for k, v in ppnet.state_dict().items()},
+                        log_dir / "ppnet_best.pth")
             best_val_acc = epoch_acc_val
             best_epoch = epoch
             print("Best epoch found, model saved!")
