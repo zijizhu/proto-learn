@@ -29,7 +29,7 @@ if __name__ == "__main__":
     log_dir = Path("logs")
     config = OmegaConf.load(Path(config_path))
     if args.options:
-        log_dir /= "-".join(args.options)
+        log_dir /= config_path.stem + "-" + "-".join(args.options)
         config.merge_with_dotlist(args.options)
     else:
         log_dir /= config_path.stem
@@ -100,7 +100,6 @@ if __name__ == "__main__":
     
     writer = SummaryWriter(log_dir=log_dir.as_posix())
 
-    ppnet.train()
     ppnet.to(device)
 
     best_epoch, best_val_acc = 0, 0.
@@ -129,6 +128,7 @@ if __name__ == "__main__":
             optimizer = optimizer_final
             lr_scheduler = None
 
+        ppnet.train()
         running_losses = defaultdict(float)
         mca_train = MulticlassAccuracy(num_classes=num_classes, average="micro").to(device)
 
@@ -138,9 +138,9 @@ if __name__ == "__main__":
             outputs = ppnet(images)
             logits, dists = outputs
             loss_dict = criterion(outputs=outputs,
-                                batch=batch,
-                                proto_class_association=ppnet.proto_class_association,
-                                fc_weights=ppnet.fc.weight)
+                                  batch=batch,
+                                  proto_class_association=ppnet.proto_class_association,
+                                  fc_weights=ppnet.fc.weight)
 
             total_loss = sum(loss_dict.values())
             total_loss.backward()
@@ -166,6 +166,7 @@ if __name__ == "__main__":
         del mca_train, outputs, loss_dict, running_losses
 
         # Validation loop
+        ppnet.eval()
         mca_val = MulticlassAccuracy(num_classes=num_classes, average="micro").to(device)
         with torch.no_grad():
             for batch in tqdm(dataloader_test):
