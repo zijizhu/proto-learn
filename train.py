@@ -60,7 +60,7 @@ if __name__ == "__main__":
     proj_layers = get_projection_layer(config.model.proj_layers,
                                        first_dim=2048 if config.model.backbone == "resnet50" else 1024)
     
-    ppnet = ProtoPNet(backbone, config.model.backbone, (2000, 128, 1, 1,), 200)
+    ppnet = ProtoPNet(backbone, proj_layers, (2000, 128, 1, 1,), 200)
     criterion = ProtoPNetLoss(l_clst_coef=config.model.l_clst_coef,
                               l_sep_coef=config.model.l_sep_coef,
                               l_l1_coef=config.model.l_l1_coef)
