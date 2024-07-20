@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from cub_dataset import CUBDataset
 from models.backbone import load_backbone
-from models.ppnet import ProtoPNet, ProtoPNetLoss
+from models.ppnet import ProtoPNet, ProtoPNetLoss, get_projection_layer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -57,10 +57,16 @@ if __name__ == "__main__":
     num_classes = 200
 
     backbone, backbone_dim = load_backbone(config.model.backbone)
+    proj_layers = get_projection_layer(config.model.proj_layers,
+                                       first_dim=2048 if config.model.backbone == "resnet50" else 1024)
+    
     ppnet = ProtoPNet(backbone, config.model.backbone, (2000, 128, 1, 1,), 200)
     criterion = ProtoPNetLoss(l_clst_coef=config.model.l_clst_coef,
                               l_sep_coef=config.model.l_sep_coef,
                               l_l1_coef=config.model.l_l1_coef)
+
+    print("Projection Layers:")
+    print(proj_layers)
 
     warmup_param_groups = [
         {'params': ppnet.proj.parameters(),
@@ -79,9 +85,18 @@ if __name__ == "__main__":
         {'params': ppnet.prototype_vectors,
          'lr': config.optim.joint.proto_lr}
     ]
+    
     optimizer_warmup = optim.Adam(warmup_param_groups)
     optimizer_joint = optim.Adam(joint_param_groups)
     lr_scheduler_joint = optim.lr_scheduler.StepLR(optimizer_joint, step_size=5, gamma=0.1)
+
+    if config.optim.final:
+        final_param_groups = [
+            {'params': ppnet.fc.parameters(),
+            'lr': config.optim.final.fc_lr}
+        ]
+        optimizer_final = optim.Adam(final_param_groups)
+    
     
     writer = SummaryWriter(log_dir=log_dir.as_posix())
 
@@ -105,10 +120,14 @@ if __name__ == "__main__":
         if epoch == 5:
             for param in ppnet.backbone.parameters():
                 param.requires_grad = True
-            for param in ppnet.fc.parameters():
-                param.requires_grad = True
             optimizer = optimizer_joint
             lr_scheduler = lr_scheduler_joint
+        
+        if config.optim.final and epoch == config.optim.final.start_epoch:
+            for name, param in ppnet.named_parameters():
+                param.requires_grad = bool("fc" in name)
+            optimizer = optimizer_final
+            lr_scheduler = None
 
         running_losses = defaultdict(float)
         mca_train = MulticlassAccuracy(num_classes=num_classes, average="micro").to(device)
@@ -146,7 +165,7 @@ if __name__ == "__main__":
 
         del mca_train, outputs, loss_dict, running_losses
 
-            # Validation loop
+        # Validation loop
         mca_val = MulticlassAccuracy(num_classes=num_classes, average="micro").to(device)
         with torch.no_grad():
             for batch in tqdm(dataloader_test):

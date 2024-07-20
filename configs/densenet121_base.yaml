@@ -1,5 +1,5 @@
 model:
-  backbone: resnet50
+  backbone: densenet121
   proj_layers: "128,relu,128,sigmoid"
   l_clst_coef: 0.8
   l_sep_coef: -0.08

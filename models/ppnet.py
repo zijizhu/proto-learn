@@ -4,8 +4,8 @@ from torch import nn
 
 
 class ProtoPNet(nn.Module):
-    def __init__(self, backbone: nn.Module, backbone_name: str, prototype_shape, num_classes,
-                 init_weights=True, activation_fn='log'):
+    def __init__(self, backbone: nn.Module, proj_layers: nn.Module,
+                 prototype_shape: tuple, num_classes: int, init_weights=True, activation_fn='log'):
         super().__init__()
         self.prototype_shape = prototype_shape
         self.num_prototypes, self.dim, _, _ = prototype_shape
@@ -23,33 +23,7 @@ class ProtoPNet(nn.Module):
 
         self.backbone = backbone
 
-        if backbone_name == "vgg19":
-            self.proj = nn.Sequential(nn.Conv2d(in_channels=512,
-                                                out_channels=self.dim,
-                                                kernel_size=1),
-                                      nn.ReLU(),
-                                      nn.Conv2d(in_channels=self.dim,
-                                                out_channels=self.dim,
-                                                kernel_size=1),
-                                      nn.Sigmoid())
-        elif backbone_name == "resnet50":
-            self.proj = nn.Sequential(nn.Conv2d(in_channels=2048,
-                                                out_channels=self.dim,
-                                                kernel_size=1),
-                                      nn.ReLU(),
-                                      nn.Conv2d(in_channels=self.dim,
-                                                out_channels=self.dim,
-                                                kernel_size=1),
-                                      nn.Sigmoid())
-        else:
-            self.proj = nn.Sequential(nn.Conv2d(in_channels=1024,
-                                                out_channels=self.dim,
-                                                kernel_size=1),
-                                      nn.ReLU(),
-                                      nn.Conv2d(in_channels=self.dim,
-                                                out_channels=self.dim,
-                                                kernel_size=1),
-                                      nn.Sigmoid())
+        self.proj = proj_layers
 
         self.prototype_vectors = nn.Parameter(torch.rand(self.prototype_shape))
 
@@ -173,3 +147,21 @@ class ProtoPNetLoss(nn.Module):
         separation_cost = torch.mean(max_dist - non_gt_proto_inverted_dists)
 
         return cluster_cost, separation_cost
+
+
+def get_projection_layer(config: str, first_dim: int = 2048):
+    layer_names = config.split(",")
+    assert all(name.isdigit() or name in ["relu", "sigmoid"] for name in layer_names)
+
+    layers = []
+    last_dim = first_dim
+    for name in layer_names:
+        if name.isdigit():
+            dim = int(name)
+            layers.append(nn.Linear(last_dim, dim))
+            last_dim = dim
+        elif name == "relu":
+            layers.append(nn.ReLU())
+        else:
+            layers.append(nn.Sigmoid())
+    return nn.Sequential(*layers)
