@@ -5,14 +5,12 @@ from pathlib import Path
 
 import lightning as L
 import torch
-import torch.nn.functional as F
 import torchvision.transforms as T
 from omegaconf import OmegaConf
-from torch import nn, optim
+from torch import optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.classification import MulticlassAccuracy
-from torchvision.datasets import ImageFolder
 from tqdm import tqdm
 
 from cub_dataset import CUBDataset
@@ -33,6 +31,8 @@ if __name__ == "__main__":
     if args.options:
         log_dir /= "-".join(args.options)
         config.merge_with_dotlist(args.options)
+    else:
+        log_dir /= config_path.stem
     log_dir.mkdir(parents=True, exist_ok=True)
     print(OmegaConf.to_yaml(config))
     OmegaConf.save(config=config, f=log_dir / "config.yaml")

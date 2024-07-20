@@ -21,5 +21,5 @@ class CUBDataset(ImageFolder):
 
     def __getitem__(self, index: int):
         im_path, label = self.samples[index]
-        im_pt = self.transform(Image.open(im_path))
+        im_pt = self.transform(Image.open(im_path).convert("RGB"))
         return im_pt, label, self.attributes[:, label]
