@@ -51,8 +51,8 @@ if __name__ == "__main__":
     dataset_test = CUBDataset(Path("datasets") / "cub200_cropped" / "test_cropped",
                               Path("datasets") / "class_attribute_labels_continuous.txt",
                               transforms=transforms)
-    dataloader_train = DataLoader(dataset=dataset_train, batch_size=8, num_workers=8, shuffle=True)
-    dataloader_test = DataLoader(dataset=dataset_test, batch_size=10, num_workers=8, shuffle=False)
+    dataloader_train = DataLoader(dataset=dataset_train, batch_size=80, num_workers=8, shuffle=True)
+    dataloader_test = DataLoader(dataset=dataset_test, batch_size=100, num_workers=8, shuffle=False)
 
     num_classes = 200
 
