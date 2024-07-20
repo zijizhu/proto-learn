@@ -158,7 +158,7 @@ def get_projection_layer(config: str, first_dim: int = 2048):
     for name in layer_names:
         if name.isdigit():
             dim = int(name)
-            layers.append(nn.Linear(last_dim, dim))
+            layers.append(nn.Conv2d(last_dim, dim, kernel_size=1))
             last_dim = dim
         elif name == "relu":
             layers.append(nn.ReLU())
