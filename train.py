@@ -52,8 +52,8 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
 
     for k, v in running_losses.items():
         loss_avg = v / len(dataloader.dataset)
-        summary_writer.add_scalar(f"Loss/{epoch_name}/train", loss_avg, epoch)
-        logger.info(f"EPOCH {epoch} ppnet train {k}: {loss_avg:.4f}")
+        summary_writer.add_scalar(f"Loss/{epoch_name}/{k}", loss_avg, epoch)
+        logger.info(f"EPOCH {epoch} {epoch_name} train {k}: {loss_avg:.4f}")
     epoch_acc_train = mca_train.compute().item()
     summary_writer.add_scalar(f"Acc/{epoch_name}/train", epoch_acc_train, epoch)
     logger.info(f"EPOCH {epoch} {epoch_name} train acc: {epoch_acc_train:.4f}")
@@ -176,7 +176,7 @@ def main():
     writer = SummaryWriter(log_dir=log_dir.as_posix())
     ppnet.to(device)
 
-    best_epoch, best_val_acc = 0, 0.
+    fc_epoch, best_epoch, best_val_acc = 0, 0, 0.
     early_stopping_epochs = 5
     epoch_name = "warmup"
 
@@ -214,17 +214,18 @@ def main():
             logger.info(f"Reached epoch {epoch}. Freeze conv layers and fine-tune fc layer.")
             for name, param in ppnet.named_parameters():
                 param.requires_grad = "fc" in name
-            for fc_epoch in range(20):
+            for _ in range(20):
                 train_epoch(model=ppnet, dataloader=dataloader_train, epoch=fc_epoch,
                             criterion=criterion, optimizer=optimizer_final, summary_writer=writer,
                             logger=logger, device=device, epoch_name=epoch_name)
-                val_epoch(model=ppnet, dataloader=dataloader_test, epoch=epoch,
-                          summary_writer=writer, logger=logger, device=device)
+                val_epoch(model=ppnet, dataloader=dataloader_test, epoch=fc_epoch,
+                          summary_writer=writer, logger=logger, device=device, epoch_name=epoch_name)
+                fc_epoch += 1
 
             epoch_name = "joint"
             logger.info("Un-freeze conv layers. Back to joint training.")
-            for param in ppnet.backbone.parameters():
-                param.requires_grad = True
+            for name, param in ppnet.named_parameters():
+                param.requires_grad = "fc" not in name
             optimizer = optimizer_joint
             lr_scheduler = lr_scheduler_joint
 

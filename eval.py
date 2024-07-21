@@ -31,14 +31,12 @@ def main():
 
     log_dir = Path(args.log_dir)
 
-    config = OmegaConf.load(Path(args.config_path) / "config.yaml")
+    config = OmegaConf.load(log_dir/ "config.yaml")
 
     print(OmegaConf.to_yaml(config))
     L.seed_everything(42)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    writer = SummaryWriter(log_dir.as_posix())
 
     transforms = T.Compose([
         T.Resize((224, 224,)),
@@ -48,20 +46,22 @@ def main():
     ])
     dataset_dir = Path("datasets") / "cub200_cropped"
     attribute_labels_path = Path("datasets") / "class_attribute_labels_continuous.txt"
-    dataset_train = CUBDataset((dataset_dir / "train_cropped_augmented").as_posix(),
+    dataset_train = CUBDataset((dataset_dir / "train_cropped").as_posix(),
                                attribute_labels_path.as_posix(),
                                transforms=transforms)
     dataset_test = CUBDataset((dataset_dir / "test_cropped").as_posix(),
                               attribute_labels_path.as_posix(),
                               transforms=transforms)
-    dataloader_train = DataLoader(dataset=dataset_train, batch_size=80, num_workers=8, shuffle=True)
-    dataloader_test = DataLoader(dataset=dataset_test, batch_size=100, num_workers=8, shuffle=False)
+    dataloader_train = DataLoader(dataset=dataset_train, batch_size=8, num_workers=8, shuffle=True)
+    dataloader_test = DataLoader(dataset=dataset_test, batch_size=8, num_workers=8, shuffle=False)
 
-    backbone, dim = load_backbone(backbone_name=config.backbone)
-    proj_layers = get_projection_layer(config.model.proj_layers)
+    backbone, dim = load_backbone(backbone_name=config.model.backbone)
+    proj_layers = get_projection_layer(config.model.proj_layers, first_dim=dim)
     ppnet = ProtoPNet(backbone, proj_layers, (2000, 128, 1, 1,), 200)
     state_dict = torch.load(log_dir / "checkpoint.pth")
     ppnet.load_state_dict(state_dict)
+
+    writer = SummaryWriter(log_dir.as_posix())
 
     ppnet.to(device)
     ppnet.eval()
@@ -71,7 +71,7 @@ def main():
     with torch.inference_mode():
         for batch in tqdm(dataloader_test):
             batch = tuple(item.to(device) for item in batch)
-            images, labels = batch
+            images, labels, _ = batch
             logits, min_dists, dists = ppnet.inference(images)
             mca(logits, labels)
     test_acc = mca.compute().item()
@@ -83,7 +83,7 @@ def main():
     with torch.inference_mode():
         for sample in tqdm(dataloader_train):
             sample = tuple(item.to(device) for item in sample)
-            image, label = sample
+            image, label, _ = sample
             logits, min_dists, dists = ppnet.inference(image)
 
             all_sample_proto_dists.append(dists)
@@ -91,6 +91,7 @@ def main():
 
     # Compute top k patches from training set that has smallest l2 distance to each prototype
     all_sample_proto_dists_pt = torch.cat(all_sample_proto_dists).cpu()
+    print("all_sample_proto_dists_pt.shape:", all_sample_proto_dists_pt.shape)
     num_samples, num_proto, w, h = all_sample_proto_dists_pt.shape
     all_sample_proto_dists_pt = all_sample_proto_dists_pt.permute(1, 0, 2, 3).reshape(num_proto, num_samples * w * h)
     proto_min_dists, indices = (-all_sample_proto_dists_pt).topk(dim=-1, k=5)

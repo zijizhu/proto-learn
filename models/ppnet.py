@@ -15,7 +15,7 @@ class ProtoPNet(nn.Module):
         assert activation_fn in ["log", "linear"]
         self.activation_fn = activation_fn
 
-        assert(self.num_prototypes % self.num_classes == 0)
+        assert self.num_prototypes % self.num_classes == 0
         self.register_buffer("proto_class_association", torch.zeros(self.num_prototypes, self.num_classes))
         num_proto_per_class = self.num_prototypes // self.num_classes
         for j in range(self.num_prototypes):
