@@ -197,12 +197,6 @@ def main():
                 param.requires_grad = True
             optimizer = optimizer_joint
             lr_scheduler = lr_scheduler_joint
-        
-        if config.optim.final and epoch == config.optim.final.start_epoch:
-            for name, param in ppnet.named_parameters():
-                param.requires_grad = bool("fc" in name)
-            optimizer = optimizer_final
-            lr_scheduler = None
 
         train_epoch(model=ppnet, dataloader=dataloader_train, epoch=epoch,
                     criterion=criterion, optimizer=optimizer, summary_writer=writer,
@@ -213,7 +207,8 @@ def main():
 
         epoch_acc_val = val_epoch(model=ppnet, dataloader=dataloader_test, epoch=epoch,
                                   summary_writer=writer, logger=logger, device=device)
-        
+
+        # Fine-tune fc layer for 20 epochs every 10 epochs of joint training
         if epoch % 10 == 0:
             epoch_name = "final"
             logger.info(f"Reached epoch {epoch}. Freeze conv layers and fine-tune fc layer.")
