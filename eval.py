@@ -58,7 +58,7 @@ def main():
     backbone, dim = load_backbone(backbone_name=config.model.backbone)
     proj_layers = get_projection_layer(config.model.proj_layers, first_dim=dim)
     ppnet = ProtoPNet(backbone, proj_layers, (2000, 128, 1, 1,), 200)
-    state_dict = torch.load(log_dir / "checkpoint.pth")
+    state_dict = torch.load(log_dir / "ppnet_best.pth")
     ppnet.load_state_dict(state_dict)
 
     writer = SummaryWriter(log_dir.as_posix())
@@ -100,6 +100,7 @@ def main():
 
     # shape: [num_proto, topk, 3]; 3 columns are sample index, w, h at last dimension
     patch_coords = torch.stack(indices, dim=-1)
+    torch.save(patch_coords, log_dir / "prototype_patches.pth")
 
     # shape: [num_proto, topk, patch_h, patch_w], [num_proto, topk, input_h, input_w]
     proto_to_patches = [[None] * 5 for _ in range(num_proto)]
@@ -129,8 +130,8 @@ def main():
     for i, (patches, src_imgs) in enumerate(tqdm(zip(proto_to_patches, proto_to_src_images), total=num_proto)):
         patches_grid = make_grid(patches)
         src_im_grid = make_grid(src_imgs)
-        writer.add_image(f"Prototype_Patch_Top_5/{i}", patches_grid)
-        writer.add_image(f"Prototype_Src_Top_5/{i}", src_im_grid)
+        writer.add_image(f"Prototype_Patches_Top5/{i}", patches_grid)
+        writer.add_image(f"Prototype_Src_Images_Top5/{i}", src_im_grid)
 
 
 if __name__ == '__main__':

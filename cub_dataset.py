@@ -2,6 +2,7 @@ from typing import Callable, Optional
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from PIL import Image
 from torchvision.datasets import ImageFolder
 
@@ -17,7 +18,8 @@ class CUBDataset(ImageFolder):
             transform=transforms,
             target_transform=target_transform
         )
-        self.attributes = torch.tensor(np.loadtxt(attribute_label_path))
+        attributes_np = np.loadtxt(attribute_label_path)
+        self.attributes = F.normalize(torch.tensor(attributes_np, dtype=torch.float32), p=2, dim=-1)
 
     def __getitem__(self, index: int):
         im_path, label = self.samples[index]

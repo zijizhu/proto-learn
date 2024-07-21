@@ -19,26 +19,26 @@ from tqdm import tqdm
 
 from cub_dataset import CUBDataset
 from models.backbone import load_backbone
-from models.ppnet import ProtoPNet, ProtoPNetLoss, get_projection_layer
+from models.ppnet import get_projection_layer
+from models.pp_concept_net import ProtoPConceptNet, ProtoPNetLoss
 
 
 def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion: nn.Module,
                 optimizer: optim.Optimizer, summary_writer: SummaryWriter,
                 logger: Logger, device: torch.device, epoch_name: str = "warmup"):
-
     model.train()
     running_losses = defaultdict(float)
     mca_train = MulticlassAccuracy(num_classes=len(dataloader.dataset.classes), average="micro").to(device)
 
+    with_concepts = epoch_name == "final"
     for batch in tqdm(dataloader):
         batch = tuple(item.to(device) for item in batch)
         images, labels, _ = batch
-        outputs = model(images)
-        logits, dists = outputs
+        outputs = model(images, with_concepts)
+        class_logits, concept_logits, min_dists, all_dists = outputs
         loss_dict = criterion(outputs=outputs,
                               batch=batch,
-                              proto_class_association=model.proto_class_association,
-                              fc_weights=model.fc.weight)
+                              proto_class_association=model.proto_class_association)
 
         total_loss = sum(loss_dict.values())
         total_loss.backward()
@@ -48,7 +48,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
         for k, v in loss_dict.items():
             running_losses[k] += v.item() * dataloader.batch_size
 
-        mca_train(logits, labels)
+        mca_train(class_logits, labels)
 
     for k, v in running_losses.items():
         loss_avg = v / len(dataloader.dataset)
@@ -64,17 +64,18 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, summary_writ
               logger: Logger, device: torch.device, epoch_name: str = "warmup"):
     model.eval()
     mca_val = MulticlassAccuracy(num_classes=len(dataloader.dataset.classes), average="micro").to(device)
+    with_concepts = epoch_name == "final"
     with torch.no_grad():
         for batch in tqdm(dataloader):
             images, labels, _ = tuple(item.to(device) for item in batch)
-            logits, dists = model(images)
+            class_logits, concept_logits, min_dists, all_dists = model(images, with_concepts)
 
-            mca_val(logits, labels)
+            mca_val(class_logits, labels)
 
     epoch_acc_val = mca_val.compute().item()
     summary_writer.add_scalar(f"Acc/{epoch_name}/val", epoch_acc_val, epoch)
     logger.info(f"EPOCH {epoch} {epoch_name} val acc: {epoch_acc_val:.4f}")
-    
+
     return epoch_acc_val
 
 
@@ -90,10 +91,10 @@ def main():
     log_dir = Path("logs")
     config = OmegaConf.load(Path(config_path))
     if args.options:
-        log_dir /= config_path.stem + "-" + "-".join(args.options)
+        log_dir /= config_path.stem + "-concept-" + "-".join(args.options)
         config.merge_with_dotlist(args.options)
     else:
-        log_dir /= config_path.stem
+        log_dir /= config_path.stem + "-concept"
     log_dir.mkdir(parents=True, exist_ok=True)
     print(OmegaConf.to_yaml(config))
     OmegaConf.save(config=config, f=log_dir / "config.yaml")
@@ -127,18 +128,18 @@ def main():
     dataset_test = CUBDataset((dataset_dir / "test_cropped").as_posix(),
                               attribute_labels_path.as_posix(),
                               transforms=transforms)
-    dataloader_train = DataLoader(dataset=dataset_train, batch_size=80, num_workers=8, shuffle=True)
+    dataloader_train = DataLoader(dataset=dataset_train, batch_size=8, num_workers=8, shuffle=True)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=100, num_workers=8, shuffle=False)
 
     # Load model
     backbone, backbone_dim = load_backbone(config.model.backbone)
     proj_layers = get_projection_layer(config.model.proj_layers,
                                        first_dim=backbone_dim)
-    
-    ppnet = ProtoPNet(backbone, proj_layers, (2000, 128, 1, 1,), 200)
+
+    ppnet = ProtoPConceptNet(backbone, proj_layers, dataset_train.attributes,
+                             (2000, 128, 1, 1,), 200)
     criterion = ProtoPNetLoss(l_clst_coef=config.model.l_clst_coef,
-                              l_sep_coef=config.model.l_sep_coef,
-                              l_l1_coef=config.model.l_l1_coef)
+                              l_sep_coef=config.model.l_sep_coef)
 
     print("Projection Layers:")
     print(proj_layers)
@@ -161,17 +162,17 @@ def main():
         {'params': ppnet.prototype_vectors,
          'lr': config.optim.joint.proto_lr}
     ]
-    
+
     optimizer_warmup = optim.Adam(warmup_param_groups)
     optimizer_joint = optim.Adam(joint_param_groups)
     lr_scheduler_joint = optim.lr_scheduler.StepLR(optimizer_joint, step_size=5, gamma=0.1)
 
     final_param_groups = [
-        {'params': ppnet.fc.parameters(),
+        {'params': ppnet.fc_concepts.parameters(),
          'lr': config.optim.final.fc_lr}
     ]
     optimizer_final = optim.Adam(final_param_groups)
-    
+
     # Prepare for training
     writer = SummaryWriter(log_dir=log_dir.as_posix())
     ppnet.to(device)
@@ -187,21 +188,23 @@ def main():
     for param in ppnet.proj.parameters():
         param.requires_grad = True
     ppnet.prototype_vectors.requires_grad = True
-    for param in ppnet.fc.parameters():
+    for param in ppnet.fc_concepts.parameters():
         param.requires_grad = False
 
     # epoch: 0-5 warmup; 5-9 joint; 10-29 final; 30-40 final; 40-60 joint
     for epoch in range(60):
         if epoch in [5, 30]:
+            logger.info("Start joint stage...")
             epoch_name = "joint"
             for name, param in ppnet.named_parameters():
-                param.requires_grad = "fc" not in name
+                param.requires_grad = "fc_concepts" not in name
             optimizer = optimizer_joint
             lr_scheduler = lr_scheduler_joint
         if epoch in [10, 40]:
+            logger.info("Start fine-tuning final layer only...")
             epoch_name = "final"
             for name, param in ppnet.named_parameters():
-                param.requires_grad = "fc" in name
+                param.requires_grad = "fc_concepts" in name
             optimizer = optimizer_final
             lr_scheduler = None
 
@@ -218,7 +221,7 @@ def main():
         # Early stopping based on validation accuracy
         if epoch_acc_val > best_val_acc:
             torch.save({k: v.cpu() for k, v in ppnet.state_dict().items()},
-                       log_dir / "ppnet_best.pth")
+                       log_dir / "checkpoint.pth")
             best_val_acc = epoch_acc_val
             best_epoch = epoch
             logger.info("Best epoch found, model saved!")
