@@ -100,6 +100,7 @@ def main():
     # shape: [num_proto, topk, 3]; 3 columns are sample index, w, h at last dimension
     patch_coords = torch.stack(indices, dim=-1)
 
+    # shape: [num_proto, topk, patch_h, patch_w], [num_proto, topk, input_h, input_w]
     proto_to_patches = [[None] * 5 for _ in range(num_proto)]
     proto_to_src_images = [[None] * 5 for _ in range(num_proto)]
 
@@ -129,6 +130,7 @@ def main():
         src_im_grid = make_grid(src_imgs)
         writer.add_image(f"Prototype_Patch_Top_5/{i}", patches_grid)
         writer.add_image(f"Prototype_Src_Top_5/{i}", src_im_grid)
+
 
 if __name__ == '__main__':
     main()

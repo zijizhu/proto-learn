@@ -209,7 +209,7 @@ def main():
                                   summary_writer=writer, logger=logger, device=device)
 
         # Fine-tune fc layer for 20 epochs every 10 epochs of joint training
-        if epoch % 10 == 0:
+        if epoch > 0 and epoch % 10 == 0:
             epoch_name = "final"
             logger.info(f"Reached epoch {epoch}. Freeze conv layers and fine-tune fc layer.")
             for name, param in ppnet.named_parameters():
