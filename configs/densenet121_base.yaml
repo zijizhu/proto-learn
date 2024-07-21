@@ -16,5 +16,4 @@ optim:
     proj_weight_decay: 1e-3
     proto_lr: 3e-3
   final:
-    start_epoch: 20
     fc_lr: 1e-4

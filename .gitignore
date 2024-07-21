@@ -1,3 +1,5 @@
 datasets
 logs
 __pycache__
+.idea
+*.ipynb
