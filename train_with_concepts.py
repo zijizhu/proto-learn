@@ -128,7 +128,7 @@ def main():
     dataset_test = CUBDataset((dataset_dir / "test_cropped").as_posix(),
                               attribute_labels_path.as_posix(),
                               transforms=transforms)
-    dataloader_train = DataLoader(dataset=dataset_train, batch_size=8, num_workers=8, shuffle=True)
+    dataloader_train = DataLoader(dataset=dataset_train, batch_size=80, num_workers=8, shuffle=True)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=100, num_workers=8, shuffle=False)
 
     # Load model
