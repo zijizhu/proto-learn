@@ -221,7 +221,7 @@ def main():
         # Early stopping based on validation accuracy
         if epoch_acc_val > best_val_acc:
             torch.save({k: v.cpu() for k, v in ppnet.state_dict().items()},
-                       log_dir / "checkpoint.pth")
+                       log_dir / "ppnet_best.pth")
             best_val_acc = epoch_acc_val
             best_epoch = epoch
             logger.info("Best epoch found, model saved!")
