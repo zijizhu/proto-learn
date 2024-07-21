@@ -133,7 +133,7 @@ def main():
     # Load model
     backbone, backbone_dim = load_backbone(config.model.backbone)
     proj_layers = get_projection_layer(config.model.proj_layers,
-                                       first_dim=2048 if config.model.backbone == "resnet50" else 1024)
+                                       first_dim=backbone_dim)
     
     ppnet = ProtoPNet(backbone, proj_layers, (2000, 128, 1, 1,), 200)
     criterion = ProtoPNetLoss(l_clst_coef=config.model.l_clst_coef,
