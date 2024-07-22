@@ -77,11 +77,12 @@ def visualize_top_prototypes(im_path: str,
                              net: nn.Module,
                              dataset: ImageFolder,
                              train_proto_nearest_patches: torch.Tensor,
-                             train_proto_dists: torch.Tensor):
+                             train_proto_dists: torch.Tensor,
+                             device: torch.device):
     im_raw = Image.open(im_path).convert("RGB")
-    im_transformed = transforms(im_raw).unsqueeze(0)
+    im_transformed = transforms(im_raw).unsqueeze(0).to(device)
     outputs = net.inference(im_transformed)
-    outputs = tuple(item.squeeze() for item in outputs)
+    outputs = tuple(item.detach().cpu().squeeze() for item in outputs)
     logits, min_dists, attn_maps = outputs
 
     topk_negative_dists, topk_proto_indices = torch.topk(-min_dists, k=5)
@@ -132,6 +133,7 @@ def visualize_top_prototypes(im_path: str,
         ax_row[2].title.set_fontsize(10)
 
         fig.tight_layout()
+
     return fig
 
 
@@ -141,6 +143,8 @@ def main():
     parser.add_argument("--num_samples_per_class", type=int, default=5)
 
     args = parser.parse_args()
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     config = OmegaConf.load(args.log_dir / "config.yaml")
     print(OmegaConf.to_yaml(config))
@@ -172,9 +176,13 @@ def main():
     train_proto_nearest_patches = torch.load(args.log_dir / "train_proto_nearest_patches.pth")
     train_proto_dists = torch.load(args.log_dir / "train_proto_dists.pt")
 
-    writer = SummaryWriter(log_dir=args.log_dir.as_posix())
+    ppnet.eval()
+    ppnet.to(device=device)
 
     sampled_im_paths = sample_images_from_classes(dataset_test, num_samples_per_class=args.num_samples_per_class)
+
+    writer = SummaryWriter(log_dir=args.log_dir.as_posix())
+
     for im_path in tqdm(sampled_im_paths):
         fig = visualize_top_prototypes(im_path,
                                        transforms,
