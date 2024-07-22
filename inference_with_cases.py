@@ -189,7 +189,8 @@ def main():
                                        ppnet,
                                        dataset_train,
                                        train_proto_nearest_patches,
-                                       train_proto_dists)
+                                       train_proto_dists,
+                                       device)
         writer.add_figure("/".join(Path(im_path).parts[-2:]), fig)
 
 
