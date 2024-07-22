@@ -174,7 +174,7 @@ def main():
     ppnet.load_state_dict(state_dict)
 
     train_proto_nearest_patches = torch.load(args.log_dir / "train_proto_nearest_patches.pth")
-    train_proto_dists = torch.load(args.log_dir / "train_proto_dists.pt")
+    train_proto_dists = torch.load(args.log_dir / "train_proto_dists.pth")
 
     ppnet.eval()
     ppnet.to(device=device)
