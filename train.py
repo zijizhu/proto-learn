@@ -52,10 +52,10 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
 
     for k, v in running_losses.items():
         loss_avg = v / len(dataloader.dataset)
-        summary_writer.add_scalar(f"Loss/{epoch_name}/{k}", loss_avg, epoch)
+        summary_writer.add_scalar(f"Loss/{k}", loss_avg, epoch)
         logger.info(f"EPOCH {epoch} {epoch_name} train {k}: {loss_avg:.4f}")
     epoch_acc_train = mca_train.compute().item()
-    summary_writer.add_scalar(f"Acc/{epoch_name}/train", epoch_acc_train, epoch)
+    summary_writer.add_scalar(f"Acc/train", epoch_acc_train, epoch)
     logger.info(f"EPOCH {epoch} {epoch_name} train acc: {epoch_acc_train:.4f}")
 
 
@@ -177,7 +177,7 @@ def main():
     ppnet.to(device)
 
     best_epoch, best_val_acc = 0, 0.
-    early_stopping_epochs = 8
+    early_stopping_epochs = 10
 
     epoch_name = "warmup"
     optimizer = optimizer_warmup
@@ -198,7 +198,7 @@ def main():
                 param.requires_grad = "fc" not in name
             optimizer = optimizer_joint
             lr_scheduler = lr_scheduler_joint
-        if epoch in [10, 40]:
+        if epoch in [15, 45]:
             epoch_name = "final"
             for name, param in ppnet.named_parameters():
                 param.requires_grad = "fc" in name

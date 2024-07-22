@@ -27,11 +27,12 @@ def patch_coord_to_bbox(coord: tuple[int, int], input_size=224, latent_size=7):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--log_dir', type=str)
+    parser.add_argument("--eval", action="store_true")
     args = parser.parse_args()
 
     log_dir = Path(args.log_dir)
 
-    config = OmegaConf.load(log_dir/ "config.yaml")
+    config = OmegaConf.load(log_dir / "config.yaml")
 
     print(OmegaConf.to_yaml(config))
     L.seed_everything(42)
@@ -52,7 +53,7 @@ def main():
     dataset_test = CUBDataset((dataset_dir / "test_cropped").as_posix(),
                               attribute_labels_path.as_posix(),
                               transforms=transforms)
-    dataloader_train = DataLoader(dataset=dataset_train, batch_size=8, num_workers=8, shuffle=True)
+    dataloader_train = DataLoader(dataset=dataset_train, batch_size=8, num_workers=8, shuffle=False)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=8, num_workers=8, shuffle=False)
 
     backbone, dim = load_backbone(backbone_name=config.model.backbone)
@@ -66,17 +67,19 @@ def main():
     ppnet.to(device)
     ppnet.eval()
 
-    # Inference on test set
-    mca = MulticlassAccuracy(num_classes=200, average="micro").to(device)
-    with torch.inference_mode():
-        for batch in tqdm(dataloader_test):
-            batch = tuple(item.to(device) for item in batch)
-            images, labels, _ = batch
-            logits, min_dists, dists = ppnet.inference(images)
-            mca(logits, labels)
-    test_acc = mca.compute().item()
-    writer.add_scalar("Acc/Test", test_acc)
-    print(f"Test Accuracy: {test_acc:.4f}%")
+    if args.eval:
+        print("Start evaluating accuracy on test set..")
+        # Inference on test set
+        mca = MulticlassAccuracy(num_classes=200, average="micro").to(device)
+        with torch.inference_mode():
+            for batch in tqdm(dataloader_test):
+                batch = tuple(item.to(device) for item in batch)
+                images, labels, _ = batch
+                logits, min_dists, dists = ppnet.inference(images)
+                mca(logits, labels)
+        test_acc = mca.compute().item()
+        writer.add_scalar("Acc/Test", test_acc)
+        print(f"Test Accuracy: {test_acc:.4f}%")
 
     # Inference on training set to get exemplar patches for each prototype
     all_sample_proto_dists, all_logits = [], []
@@ -90,17 +93,17 @@ def main():
             all_logits.append(logits)
 
     # Compute top k patches from training set that has smallest l2 distance to each prototype
-    all_sample_proto_dists_pt = torch.cat(all_sample_proto_dists).cpu()
-    print("all_sample_proto_dists_pt.shape:", all_sample_proto_dists_pt.shape)
-    num_samples, num_proto, w, h = all_sample_proto_dists_pt.shape
-    all_sample_proto_dists_pt = all_sample_proto_dists_pt.permute(1, 0, 2, 3).reshape(num_proto, num_samples * w * h)
-    proto_min_dists, indices = (-all_sample_proto_dists_pt).topk(dim=-1, k=5)
+    train_proto_dists = torch.cat(all_sample_proto_dists).cpu()
+    num_samples, num_proto, w, h = train_proto_dists.shape
+    train_proto_dists_flat = train_proto_dists.permute(1, 0, 2, 3).reshape(num_proto, num_samples * w * h)
+    proto_min_dists, indices = (-train_proto_dists_flat).topk(dim=-1, k=5)
     proto_min_dists = -proto_min_dists
     indices = torch.unravel_index(indices, (num_samples, w, h))
 
     # shape: [num_proto, topk, 3]; 3 columns are sample index, w, h at last dimension
     patch_coords = torch.stack(indices, dim=-1)
-    torch.save(patch_coords, log_dir / "prototype_patches.pth")
+    torch.save(patch_coords, log_dir / "train_proto_nearest_patches.pth")
+    torch.save(train_proto_dists, log_dir / "train_proto_dists.pth")
 
     # shape: [num_proto, topk, patch_h, patch_w], [num_proto, topk, input_h, input_w]
     proto_to_patches = [[None] * 5 for _ in range(num_proto)]
@@ -108,7 +111,7 @@ def main():
 
     for i, sample in enumerate(tqdm(dataset_train.samples)):
         im_path, label = sample
-        mask = patch_coords[:, :, 0] == i  # shape: [num_prototypes, topk]
+        mask = torch.eq(patch_coords[:, :, 0], i)  # shape: [num_prototypes, topk]
         proto_patch_indices = torch.nonzero(mask)
         if proto_patch_indices.numel() == 0:
             continue
@@ -127,11 +130,14 @@ def main():
             proto_to_patches[proto_idx][topk_idx] = patch_cropped
             proto_to_src_images[proto_idx][topk_idx] = src_im_with_bbox
 
+    all_patch_grids, all_src_im_grids = [], []
     for i, (patches, src_imgs) in enumerate(tqdm(zip(proto_to_patches, proto_to_src_images), total=num_proto)):
         patches_grid = make_grid(patches)
         src_im_grid = make_grid(src_imgs)
         writer.add_image(f"Prototype_Patches_Top5/{i}", patches_grid)
         writer.add_image(f"Prototype_Src_Images_Top5/{i}", src_im_grid)
+        all_patch_grids.append(patches_grid)
+        all_src_im_grids.append(src_im_grid)
 
 
 if __name__ == '__main__':
