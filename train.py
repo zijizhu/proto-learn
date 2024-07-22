@@ -72,7 +72,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, summary_writ
             mca_val(logits, labels)
 
     epoch_acc_val = mca_val.compute().item()
-    summary_writer.add_scalar(f"Acc/{epoch_name}/val", epoch_acc_val, epoch)
+    summary_writer.add_scalar(f"Acc/val", epoch_acc_val, epoch)
     logger.info(f"EPOCH {epoch} {epoch_name} val acc: {epoch_acc_val:.4f}")
     
     return epoch_acc_val
