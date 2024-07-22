@@ -78,12 +78,18 @@ def visualize_top_prototypes(im_path: str,
                              dataset: ImageFolder,
                              train_proto_nearest_patches: torch.Tensor,
                              train_proto_dists: torch.Tensor,
-                             device: torch.device):
+                             device: torch.device,
+                             with_concepts: bool = False):
     im_raw = Image.open(im_path).convert("RGB")
     im_transformed = transforms(im_raw).unsqueeze(0).to(device)
-    outputs = net.inference(im_transformed)
-    outputs = tuple(item.detach().cpu().squeeze() for item in outputs)
-    logits, min_dists, attn_maps = outputs
+    if with_concepts:
+        outputs = net(im_transformed, with_concepts)
+        outputs = tuple(item.detach().cpu().squeeze() for item in outputs)
+        logits, concept_logits, min_dists, attn_maps = outputs
+    else:
+        outputs = net.inference(im_transformed)
+        outputs = tuple(item.detach().cpu().squeeze() for item in outputs)
+        logits, min_dists, attn_maps = outputs
 
     topk_negative_dists, topk_proto_indices = torch.topk(-min_dists, k=5)
     least_k_min_dists = -topk_negative_dists
@@ -144,6 +150,8 @@ def main():
 
     args = parser.parse_args()
 
+    with_concepts = "concept" in args.log_dir.as_posix()
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     config = OmegaConf.load(args.log_dir / "config.yaml")
@@ -190,7 +198,8 @@ def main():
                                        dataset_train,
                                        train_proto_nearest_patches,
                                        train_proto_dists,
-                                       device)
+                                       device,
+                                       with_concepts)
         writer.add_figure("/".join(Path(im_path).parts[-2:]), fig)
 
 

@@ -198,7 +198,7 @@ def main():
                 param.requires_grad = "fc" not in name
             optimizer = optimizer_joint
             lr_scheduler = lr_scheduler_joint
-        if epoch in [15, 45]:
+        if epoch in [15, 50]:
             epoch_name = "final"
             for name, param in ppnet.named_parameters():
                 param.requires_grad = "fc" in name

@@ -200,7 +200,7 @@ def main():
                 param.requires_grad = "fc_concepts" not in name
             optimizer = optimizer_joint
             lr_scheduler = lr_scheduler_joint
-        if epoch in [10, 40]:
+        if epoch in [15, 50]:
             logger.info("Start fine-tuning final layer only...")
             epoch_name = "final"
             for name, param in ppnet.named_parameters():

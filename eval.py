@@ -31,6 +31,7 @@ def main():
     args = parser.parse_args()
 
     log_dir = Path(args.log_dir)
+    with_concepts = "concept" in log_dir
 
     config = OmegaConf.load(log_dir / "config.yaml")
 
@@ -75,7 +76,10 @@ def main():
             for batch in tqdm(dataloader_test):
                 batch = tuple(item.to(device) for item in batch)
                 images, labels, _ = batch
-                logits, min_dists, dists = ppnet.inference(images)
+                if with_concepts:
+                    logits, concept_logits, min_dists, dists = ppnet(images, with_concepts)
+                else:
+                    logits, min_dists, dists = ppnet.inference(images)
                 mca(logits, labels)
         test_acc = mca.compute().item()
         writer.add_scalar("Acc/Test", test_acc)
@@ -87,7 +91,10 @@ def main():
         for sample in tqdm(dataloader_train):
             sample = tuple(item.to(device) for item in sample)
             image, label, _ = sample
-            logits, min_dists, dists = ppnet.inference(image)
+            if with_concepts:
+                logits, concept_logits, min_dists, dists = ppnet(images, with_concepts)
+            else:
+                logits, min_dists, dists = ppnet.inference(images)
 
             all_sample_proto_dists.append(dists)
             all_logits.append(logits)
