@@ -16,6 +16,7 @@ from tqdm import tqdm
 from models.backbone import load_backbone
 from cub_dataset import CUBDataset
 from models.ppnet import ProtoPNet, get_projection_layer
+from models.pp_concept_net import ProtoPConceptNet
 
 
 def patch_coord_to_bbox(coord: tuple[int, int], input_size=224, latent_size=7):
@@ -59,9 +60,12 @@ def main():
 
     backbone, dim = load_backbone(backbone_name=config.model.backbone)
     proj_layers = get_projection_layer(config.model.proj_layers, first_dim=dim)
-    ppnet = ProtoPNet(backbone, proj_layers, (2000, 128, 1, 1,), 200)
-    state_dict = torch.load(log_dir / "ppnet_best.pth")
-    ppnet.load_state_dict(state_dict)
+    if with_concepts:
+        ppnet = ProtoPConceptNet(backbone, proj_layers, dataset_train.attributes, (2000, 128, 1, 1,))
+    else:
+        ppnet = ProtoPNet(backbone, proj_layers, (2000, 128, 1, 1,), 200)
+        state_dict = torch.load(log_dir / "ppnet_best.pth")
+        ppnet.load_state_dict(state_dict)
 
     writer = SummaryWriter(log_dir.as_posix())
 

@@ -79,7 +79,7 @@ def visualize_top_prototypes(im_path: str,
                              train_proto_nearest_patches: torch.Tensor,
                              train_proto_dists: torch.Tensor,
                              device: torch.device,
-                             with_concepts: bool = False):
+                             with_concepts: bool = False) -> Image.Image:
     im_raw = Image.open(im_path).convert("RGB")
     im_transformed = transforms(im_raw).unsqueeze(0).to(device)
     if with_concepts:
@@ -131,16 +131,18 @@ def visualize_top_prototypes(im_path: str,
         ax_row[0].title.set_fontsize(10)
 
         ax_row[1].imshow(F.to_pil_image(nearest_train_sample_bbox))
-        ax_row[1].title.set_text(f"Class: {Path(nearest_train_sample_im_path).parts[-2]}")
+        ax_row[1].title.set_text(f"{Path(nearest_train_sample_im_path).parts[-2]}")
         ax_row[1].title.set_fontsize(10)
 
         ax_row[2].imshow(nearest_train_sample_overlay)
         ax_row[2].title.set_text(f"{proto_index % 10}th prototype of class {proto_index // 10}")
         ax_row[2].title.set_fontsize(10)
 
-        fig.tight_layout()
+    fig.tight_layout()
+    fig.canvas.draw()
+    fig_im = Image.frombuffer('RGBa', fig.canvas.get_width_height(), fig.canvas.buffer_rgba())
 
-    return fig
+    return fig_im
 
 
 def main():
@@ -200,7 +202,7 @@ def main():
                                        train_proto_dists,
                                        device,
                                        with_concepts)
-        writer.add_figure("/".join(Path(im_path).parts[-2:]), fig)
+        writer.add_image("/".join(Path(im_path).parts[-2:]), fig)
 
 
 if __name__ == "__main__":
