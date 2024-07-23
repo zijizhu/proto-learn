@@ -90,11 +90,11 @@ def main():
     with torch.inference_mode():
         for sample in tqdm(dataloader_train):
             sample = tuple(item.to(device) for item in sample)
-            image, label, _ = sample
+            sample_image, label, _ = sample
             if with_concepts:
-                logits, concept_logits, min_dists, dists = ppnet(images, with_concepts)
+                logits, concept_logits, min_dists, dists = ppnet(sample_image, with_concepts)
             else:
-                logits, min_dists, dists = ppnet.inference(images)
+                logits, min_dists, dists = ppnet.inference(sample_image)
 
             all_sample_proto_dists.append(dists)
             all_logits.append(logits)
