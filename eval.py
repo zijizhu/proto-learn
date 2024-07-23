@@ -31,7 +31,7 @@ def main():
     args = parser.parse_args()
 
     log_dir = Path(args.log_dir)
-    with_concepts = "concept" in log_dir
+    with_concepts = "concept" in log_dir.as_posix()
 
     config = OmegaConf.load(log_dir / "config.yaml")
 
