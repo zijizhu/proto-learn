@@ -79,7 +79,7 @@ def visualize_top_prototypes(im_path: str,
                              train_proto_nearest_patches: torch.Tensor,
                              train_proto_dists: torch.Tensor,
                              device: torch.device,
-                             with_concepts: bool = False) -> Image.Image:
+                             with_concepts: bool = False) -> torch.Tensor:
     im_raw = Image.open(im_path).convert("RGB")
     im_transformed = transforms(im_raw).unsqueeze(0).to(device)
     if with_concepts:
@@ -141,8 +141,9 @@ def visualize_top_prototypes(im_path: str,
     fig.tight_layout()
     fig.canvas.draw()
     fig_im = Image.frombuffer('RGBa', fig.canvas.get_width_height(), fig.canvas.buffer_rgba())
+    fig_im_pt = F.pil_to_tensor(fig_im)
 
-    return fig_im
+    return fig_im_pt
 
 
 def main():
@@ -202,7 +203,7 @@ def main():
                                        train_proto_dists,
                                        device,
                                        with_concepts)
-        writer.add_image("/".join(Path(im_path).parts[-2:]), fig)
+        writer.add_image("/".join(Path(im_path).parts[-2:]), fig, dataformats='CHW')
 
 
 if __name__ == "__main__":
