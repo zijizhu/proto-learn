@@ -73,7 +73,8 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, summary_writ
     with torch.no_grad():
         for batch in tqdm(dataloader):
             images, labels, _ = tuple(item.to(device) for item in batch)
-            logits, dists = model(images)
+            outputs = model(images)
+            logits = outputs["logits"]
 
             mca_val(logits, labels)
 
