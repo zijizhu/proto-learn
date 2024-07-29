@@ -4,6 +4,7 @@ from pathlib import Path
 
 import cv2
 import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
 import numpy as np
 import torch
 import torchvision.transforms as T
@@ -72,14 +73,19 @@ def get_high_activation_bbox(attn_map: torch.Tensor, threshold: float = 0.5) -> 
 
 
 @torch.inference_mode()
-def visualize_top_prototypes(im_path: str,
+def visualize_top_prototypes(axes,
+                             im_path: str,
                              transforms: T.Compose,
                              net: nn.Module,
                              dataset: ImageFolder,
                              train_proto_nearest_patches: torch.Tensor,
                              train_proto_dists: torch.Tensor,
                              device: torch.device,
-                             with_concepts: bool = False) -> torch.Tensor:
+                             with_concepts: bool = False) -> None:
+    """
+    Given a path to test sample, compute prototypes with the highest activation.
+    Visualize the prototypes with the nearest training sample draw on provided axes
+    """
     im_raw = Image.open(im_path).convert("RGB")
     im_transformed = transforms(im_raw).unsqueeze(0).to(device)
     if with_concepts:
@@ -99,10 +105,6 @@ def visualize_top_prototypes(im_path: str,
     attn_maps = attn_maps.squeeze()[topk_proto_indices]
     attn_maps = distance_to_similarity(attn_maps)
     attn_maps = F.resize(attn_maps, [224, 224], F.InterpolationMode.BICUBIC)
-
-    fig, axes = plt.subplots(nrows=5, ncols=3, figsize=(9, 12))
-    for ax in axes.flat:
-        ax.set_xticks([]), ax.set_yticks([])
 
     for i, (amap, proto_index, ax_row, dist, similarity) in enumerate(
             zip(attn_maps, topk_proto_indices, axes, least_k_min_dists, topk_similarities)):
@@ -137,13 +139,6 @@ def visualize_top_prototypes(im_path: str,
         ax_row[2].imshow(nearest_train_sample_overlay)
         ax_row[2].title.set_text(f"{proto_index % 10}th prototype of class {proto_index // 10}")
         ax_row[2].title.set_fontsize(10)
-
-    fig.tight_layout()
-    fig.canvas.draw()
-    fig_im = Image.frombuffer('RGBa', fig.canvas.get_width_height(), fig.canvas.buffer_rgba())
-    fig_im_pt = F.pil_to_tensor(fig_im)
-
-    return fig_im_pt
 
 
 def main():
@@ -194,16 +189,28 @@ def main():
 
     writer = SummaryWriter(log_dir=args.log_dir.as_posix())
 
+    fig, axes = plt.subplots(nrows=5, ncols=3, figsize=(9, 12))
+    for ax in axes.flat:
+        ax.set_xticks([]), ax.set_yticks([])
+    fig.tight_layout()
+
     for im_path in tqdm(sampled_im_paths):
-        fig = visualize_top_prototypes(im_path,
-                                       transforms,
-                                       ppnet,
-                                       dataset_train,
-                                       train_proto_nearest_patches,
-                                       train_proto_dists,
-                                       device,
-                                       with_concepts)
-        writer.add_image("/".join(Path(im_path).parts[-2:]), fig, dataformats='CHW')
+        visualize_top_prototypes(axes,
+                                 im_path,
+                                 transforms,
+                                 ppnet,
+                                 dataset_train,
+                                 train_proto_nearest_patches,
+                                 train_proto_dists,
+                                 device,
+                                 with_concepts)
+        fig.canvas.draw()
+        fig_image = Image.frombuffer('RGBa',
+                                     fig.canvas.get_width_height(),
+                                     fig.canvas.buffer_rgba()).convert("RGB")
+        plt.cla()
+
+        writer.add_image("/".join(Path(im_path).parts[-2:]), F.pil_to_tensor(fig_image), dataformats='CHW')
 
 
 if __name__ == "__main__":

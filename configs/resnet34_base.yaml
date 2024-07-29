@@ -1,0 +1,26 @@
+model:
+  input_size: 224
+  backbone: resnet34
+  proj_layers: "256,relu,256,sigmoid"
+  l_clst_coef: 0.8
+  l_sep_coef: -0.08
+  l_l1_coef: 1e-4
+optim:
+  joint_epoch_start:
+    - 5
+    - 30
+  final_epoch_start:
+    - 10
+    - 40
+  warmup:
+    proj_lr: 3e-3
+    proj_weight_decay: 1e-3
+    proto_lr: 3e-3
+  joint:
+    backbone_lr: 1e-4
+    backbone_weight_decay: 1e-3
+    proj_lr: 3e-3
+    proj_weight_decay: 1e-3
+    proto_lr: 3e-3
+  final:
+    fc_lr: 1e-4

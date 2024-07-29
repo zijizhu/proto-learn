@@ -31,11 +31,12 @@ class ProtoPNet(nn.Module):
         self.fc = nn.Linear(self.num_prototypes, self.num_classes, bias=False)
 
         if init_weights:
-            self._initialize_weights()
+            self._init_weights()
 
     def _l2_dists(self, x):
         """
-        Compute x ** 2 - 2 * x * prototype + prototype ** 2
+        Compute x ** 2 - 2 * x * prototype + prototype ** 2,
+        where x is a feature map of shape
         All channels of x2_patch_sum at position i, j have the same values
         All spacial values of p2_reshape at each channel are the same
         """
@@ -59,34 +60,27 @@ class ProtoPNet(nn.Module):
         else:
             return -distances
 
-    def forward(self, x):
+    def forward(self, x) -> dict[str, torch.Tensor]:
         f = self.backbone(x)
         f = self.proj(f)
         dists = self._l2_dists(f)  # shape: [b, num_prototypes, h, w]
         b, num_prototypes, h, w = dists.shape
+
         # 2D min pooling
         min_dists = -F.max_pool2d(-dists, kernel_size=(h, w,))  # shape: [b, num_prototypes, 1, 1]
         min_dists = min_dists.squeeze((-1, -2,))  # shape: [b, num_prototypes]
 
         activations = self.distance_to_similarity(min_dists)  # shape: [b, num_prototypes]
         logits = self.fc(activations)
-        return logits, min_dists
 
-    @torch.inference_mode()
-    def inference(self, x):
-        f = self.backbone(x)
-        f = self.proj(f)
-        dists = self._l2_dists(f)  # shape: [b, num_prototypes, h, w]
-        b, num_prototypes, h, w = dists.shape
-        # 2D min pooling
-        min_dists = -F.max_pool2d(-dists, kernel_size=(h, w,))  # shape: [b, num_prototypes, 1, 1]
-        min_dists = min_dists.squeeze((-1, -2,))  # shape: [b, num_prototypes]
+        return dict(
+            projected_features=f,
+            l2_dists=dists,
+            activations=activations,
+            logits=logits
+        )
 
-        activations = self.distance_to_similarity(min_dists)  # shape: [b, num_prototypes]
-        logits = self.fc(activations)
-        return logits, min_dists, dists
-
-    def _initialize_weights(self):
+    def _init_weights(self):
         for m in self.proj.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -127,6 +121,8 @@ class ProtoPNetLoss(nn.Module):
                                                proto_class_association)
             loss_dict["l_clst"] = self.l_clst_coef * l_clst
             loss_dict["l_sep"] = self.l_sep_coef * l_sep
+            loss_dict["_l_clst_raw"] = self.l_clst_coef * l_clst
+            loss_dict["_l_sep_raw"] = self.l_sep_coef * l_sep
 
         l1_mask = 1 - proto_class_association.T
         l1 = (fc_weights * l1_mask).norm(p=1)

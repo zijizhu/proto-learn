@@ -20,6 +20,7 @@ from tqdm import tqdm
 from cub_dataset import CUBDataset
 from models.backbone import load_backbone
 from models.ppnet import ProtoPNet, ProtoPNetLoss, get_projection_layer
+from projection import project_prototypes
 
 
 def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion: nn.Module,
@@ -40,7 +41,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
                               proto_class_association=model.proto_class_association,
                               fc_weights=model.fc.weight)
 
-        total_loss = sum(loss_dict.values())
+        total_loss = sum(v for k, v in loss_dict.items() if not k.startswith("_"))
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -54,8 +55,13 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
         loss_avg = v / len(dataloader.dataset)
         summary_writer.add_scalar(f"Loss/{k}", loss_avg, epoch)
         logger.info(f"EPOCH {epoch} {epoch_name} train {k}: {loss_avg:.4f}")
+
+    sep_clst_sum = (running_losses["l_clst"] + running_losses["l_sep"]) / len(dataloader.dataset)
+    summary_writer.add_scalar("Loss/sep_clst_sum", sep_clst_sum, epoch)
+    logger.info(f"EPOCH {epoch} {epoch_name} train sep_clst_sum: {sep_clst_sum:.4f}")
+
     epoch_acc_train = mca_train.compute().item()
-    summary_writer.add_scalar(f"Acc/train", epoch_acc_train, epoch)
+    summary_writer.add_scalar("Acc/train", epoch_acc_train, epoch)
     logger.info(f"EPOCH {epoch} {epoch_name} train acc: {epoch_acc_train:.4f}")
 
 
@@ -72,7 +78,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, summary_writ
             mca_val(logits, labels)
 
     epoch_acc_val = mca_val.compute().item()
-    summary_writer.add_scalar(f"Acc/val", epoch_acc_val, epoch)
+    summary_writer.add_scalar("Acc/val", epoch_acc_val, epoch)
     logger.info(f"EPOCH {epoch} {epoch_name} val acc: {epoch_acc_val:.4f}")
     
     return epoch_acc_val
@@ -113,8 +119,9 @@ def main():
     L.seed_everything(42)
 
     # Load data
+    input_size = config.model.input_size
     transforms = T.Compose([
-        T.Resize((224, 224,)),
+        T.Resize((input_size, input_size,)),
         T.ToTensor(),
         T.Normalize(mean=(0.485, 0.456, 0.406,),
                     std=(0.229, 0.224, 0.225,))
@@ -129,6 +136,7 @@ def main():
                               transforms=transforms)
     dataloader_train = DataLoader(dataset=dataset_train, batch_size=80, num_workers=8, shuffle=True)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=100, num_workers=8, shuffle=False)
+    dataloader_projection = DataLoader(dataset=dataset_train, batch_size=75, num_workers=8, shuffle=False)
 
     # Load model
     backbone, backbone_dim = load_backbone(config.model.backbone)
@@ -190,15 +198,21 @@ def main():
     for param in ppnet.fc.parameters():
         param.requires_grad = False
 
-    # epoch: 0-5 warmup; 5-9 joint; 10-29 final; 30-40 final; 40-60 joint
+    # epoch: 0-4 warmup; 5-9 joint; 10-29 final; 30-40 joint; 40-60 final
     for epoch in range(60):
-        if epoch in [5, 30]:
+        if epoch in config.optim.joint_epoch_start:
             epoch_name = "joint"
             for name, param in ppnet.named_parameters():
                 param.requires_grad = "fc" not in name
             optimizer = optimizer_joint
             lr_scheduler = lr_scheduler_joint
-        if epoch in [15, 50]:
+
+        elif epoch in config.optim.final_epoch_start:
+
+            projection_results = project_prototypes(ppnet, dataloader_projection, device=device)
+            torch.save(projection_results, log_dir / f"projection_results_epoch{epoch}.pth")
+            writer.add_histogram("Projection_Min_Dists", projection_results["min_l2_dists"], epoch)
+
             epoch_name = "final"
             for name, param in ppnet.named_parameters():
                 param.requires_grad = "fc" in name
