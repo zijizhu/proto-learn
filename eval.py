@@ -37,7 +37,7 @@ def main():
     config = OmegaConf.load(log_dir / "config.yaml")
 
     print(OmegaConf.to_yaml(config))
-    L.seed_everything(42)
+    L.seed_everything(config.optim.seed)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -61,9 +61,9 @@ def main():
     backbone, dim = load_backbone(backbone_name=config.model.backbone)
     proj_layers = get_projection_layer(config.model.proj_layers, first_dim=dim)
     if with_concepts:
-        ppnet = ProtoPConceptNet(backbone, proj_layers, dataset_train.attributes, (2000, 128, 1, 1,))
+        ppnet = ProtoPConceptNet(backbone, proj_layers, dataset_train.attributes, tuple(config.model.prototype_shape))
     else:
-        ppnet = ProtoPNet(backbone, proj_layers, (2000, 128, 1, 1,), 200)
+        ppnet = ProtoPNet(backbone, proj_layers, tuple(config.model.prototype_shape), 200)
         state_dict = torch.load(log_dir / "ppnet_best.pth")
         ppnet.load_state_dict(state_dict)
 
@@ -80,11 +80,8 @@ def main():
             for batch in tqdm(dataloader_test):
                 batch = tuple(item.to(device) for item in batch)
                 images, labels, _ = batch
-                if with_concepts:
-                    logits, concept_logits, min_dists, dists = ppnet(images, with_concepts)
-                else:
-                    logits, min_dists, dists = ppnet.inference(images)
-                mca(logits, labels)
+                outputs = ppnet(images)
+                mca(outputs["logits"], labels)
         test_acc = mca.compute().item()
         writer.add_scalar("Acc/Test", test_acc)
         print(f"Test Accuracy: {test_acc:.4f}%")
@@ -95,10 +92,9 @@ def main():
         for sample in tqdm(dataloader_train):
             sample = tuple(item.to(device) for item in sample)
             sample_image, label, _ = sample
-            if with_concepts:
-                logits, concept_logits, min_dists, dists = ppnet(sample_image, with_concepts)
-            else:
-                logits, min_dists, dists = ppnet.inference(sample_image)
+            outputs = ppnet(sample_image)
+            
+            logits, dists = outputs["logits"], outputs["l2_dists"]
 
             all_sample_proto_dists.append(dists)
             all_logits.append(logits)

@@ -18,14 +18,13 @@ from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from cub_dataset import CUBDataset
-from models.backbone import load_backbone
-from models.ppnet import ProtoPNet, ProtoPNetLoss, get_projection_layer
 from projection import project_prototypes
+from models.ppnet_dino import ProtoPNetDINO, get_projection_layer, ProtoPNetLoss
 
 
 def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion: nn.Module,
                 optimizer: optim.Optimizer, summary_writer: SummaryWriter,
-                logger: Logger, device: torch.device, epoch_name: str = "warmup"):
+                logger: Logger, device: torch.device, epoch_name: str = "joint"):
 
     model.train()
     running_losses = defaultdict(float)
@@ -67,7 +66,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
 
 @torch.inference_mode()
 def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, summary_writer: SummaryWriter,
-              logger: Logger, device: torch.device, epoch_name: str = "warmup"):
+              logger: Logger, device: torch.device, epoch_name: str = "joint"):
     model.eval()
     mca_val = MulticlassAccuracy(num_classes=len(dataloader.dataset.classes), average="micro").to(device)
     with torch.no_grad():
@@ -144,11 +143,12 @@ def main():
     dataloader_projection = DataLoader(dataset=dataset_projection, batch_size=75, num_workers=8, shuffle=False)
 
     # Load model
-    backbone, backbone_dim = load_backbone(config.model.backbone)
-    proj_layers = get_projection_layer(config.model.proj_layers,
-                                       first_dim=backbone_dim)
+    proj_layers = get_projection_layer(config.model.proj_layers)
     
-    ppnet = ProtoPNet(backbone, proj_layers, tuple(config.model.prototype_shape), 200)
+    ppnet = ProtoPNetDINO("dinov2_vitb14_reg",
+                          proj_layers=proj_layers,
+                          prototype_shape=tuple(config.model.prototype_shape),
+                          num_classes=200)
     criterion = ProtoPNetLoss(l_clst_coef=config.model.l_clst_coef,
                               l_sep_coef=config.model.l_sep_coef,
                               l_l1_coef=config.model.l_l1_coef)
@@ -157,17 +157,7 @@ def main():
     print(proj_layers)
 
     # Load optimizers
-    warmup_param_groups = [
-        {'params': ppnet.proj.parameters(),
-         'lr': config.optim.warmup.proj_lr,
-         'weight_decay': config.optim.warmup.proj_weight_decay},
-        {'params': ppnet.prototype_vectors,
-         'lr': config.optim.warmup.proto_lr},
-    ]
     joint_param_groups = [
-        {'params': ppnet.backbone.parameters(),
-         'lr': config.optim.joint.backbone_lr,
-         'weight_decay': config.optim.joint.backbone_weight_decay},
         {'params': ppnet.proj.parameters(),
          'lr': config.optim.joint.proj_lr,
          'weight_decay': config.optim.joint.proj_weight_decay},
@@ -175,7 +165,6 @@ def main():
          'lr': config.optim.joint.proto_lr}
     ]
     
-    optimizer_warmup = optim.Adam(warmup_param_groups)
     optimizer_joint = optim.Adam(joint_param_groups)
     lr_scheduler_joint = optim.lr_scheduler.StepLR(optimizer_joint, step_size=5, gamma=0.1)
 
@@ -191,23 +180,17 @@ def main():
 
     best_epoch, best_val_acc = 0, 0.
 
-    epoch_name = "warmup"
-    optimizer = optimizer_warmup
-    lr_scheduler = None
-    for param in ppnet.backbone.parameters():
-        param.requires_grad = False
-    for param in ppnet.proj.parameters():
-        param.requires_grad = True
-    ppnet.prototype_vectors.requires_grad = True
-    for param in ppnet.fc.parameters():
-        param.requires_grad = False
-
-    # epoch: 0-4 warmup; 5-9 joint; 10-29 final; 30-40 joint; 40-60 final
+    # epoch: 0-9 joint; 10-29 final; 30-40 joint; 40-60 final
     for epoch in range(60):
         if epoch in config.optim.joint_epoch_start:
             epoch_name = "joint"
-            for name, param in ppnet.named_parameters():
-                param.requires_grad = "fc" not in name
+            for param in ppnet.backbone.parameters():
+                param.requires_grad = False
+            for param in ppnet.proj.parameters():
+                param.requires_grad = True
+            ppnet.prototype_vectors.requires_grad = True
+            for param in ppnet.fc.parameters():
+                param.requires_grad = False
             optimizer = optimizer_joint
             lr_scheduler = lr_scheduler_joint
 
@@ -240,7 +223,7 @@ def main():
             best_val_acc = epoch_acc_val
             best_epoch = epoch
             logger.info("Best epoch found, model saved!")
-    
+
     torch.save({k: v.cpu() for k, v in ppnet.state_dict().items()},
                        log_dir / "ppnet_final.pth")
     logger.info(f"DONE! Best epoch is epoch {best_epoch} with accuracy {best_val_acc}.")

@@ -4,7 +4,6 @@ from pathlib import Path
 
 import cv2
 import matplotlib.pyplot as plt
-from matplotlib.axes import Axes
 import numpy as np
 import torch
 import torchvision.transforms as T
@@ -19,8 +18,6 @@ from torchvision.utils import draw_bounding_boxes
 from tqdm import tqdm
 
 from cub_dataset import CUBDataset
-from models.backbone import load_backbone
-from models.ppnet import ProtoPNet, get_projection_layer
 
 
 def sample_images_from_classes(dataset: ImageFolder, num_samples_per_class: int = 5):
@@ -173,9 +170,17 @@ def main():
                               transforms=transforms)
 
     # Load model
-    backbone, dim = load_backbone(backbone_name=config.model.backbone)
-    proj_layers = get_projection_layer(config.model.proj_layers, first_dim=dim)
-    ppnet = ProtoPNet(backbone, proj_layers, (2000, 128, 1, 1,), 200)
+    if "dino" in config.model.backbone:
+        from models.ppnet_dino import ProtoPNetDINO, get_projection_layer
+        proj_layers = get_projection_layer(config.model.proj_layers)
+        ppnet = ProtoPNetDINO(config.model.backbone, proj_layers, tuple(config.model.prototype_shape), 200)
+    else:
+        from models.backbone import load_backbone
+        from models.ppnet import ProtoPNet, get_projection_layer
+        backbone, dim = load_backbone(backbone_name=config.model.backbone)
+        proj_layers = get_projection_layer(config.model.proj_layers, first_dim=dim)
+        ppnet = ProtoPNet(backbone, proj_layers, tuple(config.model.prototype_shape), 200)
+
     state_dict = torch.load(args.log_dir / "ppnet_best.pth")
     ppnet.load_state_dict(state_dict)
 

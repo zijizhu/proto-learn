@@ -1,10 +1,12 @@
 import torch
-import torch.nn.functional as F
 from torch import nn
+import torch.nn.functional as F
+
+from einops import rearrange
 
 
-class ProtoPNet(nn.Module):
-    def __init__(self, backbone: nn.Module, proj_layers: nn.Module,
+class ProtoPNetDINO(nn.Module):
+    def __init__(self, name: str, proj_layers: nn.Module,
                  prototype_shape: tuple, num_classes: int, init_weights=True, activation_fn='log'):
         super().__init__()
         self.prototype_shape = prototype_shape
@@ -21,8 +23,8 @@ class ProtoPNet(nn.Module):
         for j in range(self.num_prototypes):
             self.proto_class_association[j, j // num_proto_per_class] = 1
 
-        self.backbone = backbone
-
+        self.backbone = torch.hub.load('facebookresearch/dinov2', name)
+        
         self.proj = proj_layers
 
         self.prototype_vectors = nn.Parameter(torch.rand(self.prototype_shape))
@@ -61,7 +63,8 @@ class ProtoPNet(nn.Module):
             return -distances
 
     def forward(self, x) -> dict[str, torch.Tensor]:
-        f = self.backbone(x)
+        feature_dict = self.backbone.forward_features(x)
+        f = rearrange(feature_dict["x_norm_patchtokens"], " b (h w) c -> b c h w", h=16, w=16)
         f = self.proj(f)
         dists = self._l2_dists(f)  # shape: [b, num_prototypes, h, w]
         b, num_prototypes, h, w = dists.shape
@@ -97,7 +100,7 @@ class ProtoPNet(nn.Module):
         neg_connections = 1 - pos_connections
 
         self.fc.weight.data.copy_(1 * pos_connections - 0.5 * neg_connections)
-
+        
 
 class ProtoPNetLoss(nn.Module):
     def __init__(self, l_clst_coef: float, l_sep_coef: float, l_l1_coef: float) -> None:
@@ -146,7 +149,7 @@ class ProtoPNetLoss(nn.Module):
         return cluster_cost, separation_cost
 
 
-def get_projection_layer(config: str, first_dim: int = 2048):
+def get_projection_layer(config: str, first_dim: int = 768):
     layer_names = config.split(",")
     assert all(name.isdigit() or name in ["relu", "sigmoid"] for name in layer_names)
 
