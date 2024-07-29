@@ -144,7 +144,7 @@ def main():
     proj_layers = get_projection_layer(config.model.proj_layers,
                                        first_dim=backbone_dim)
     
-    ppnet = ProtoPNet(backbone, proj_layers, config.model.prototype_shape, 200)
+    ppnet = ProtoPNet(backbone, proj_layers, tuple(config.model.prototype_shape), 200)
     criterion = ProtoPNetLoss(l_clst_coef=config.model.l_clst_coef,
                               l_sep_coef=config.model.l_sep_coef,
                               l_l1_coef=config.model.l_l1_coef)
