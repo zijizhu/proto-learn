@@ -1,6 +1,11 @@
 model:
   input_size: 224
   backbone: resnet34
+  prototype_shape:
+    - 2000
+    - 256
+    - 1
+    - 1
   proj_layers: "256,relu,256,sigmoid"
   l_clst_coef: 0.8
   l_sep_coef: -0.08
@@ -24,3 +29,4 @@ optim:
     proto_lr: 3e-3
   final:
     fc_lr: 1e-4
+  seed: 42
