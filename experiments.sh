@@ -1,4 +1,4 @@
 #!/bin/bash
 
-python train.py --config_path configs/resnet34.yaml
-python train.py --config_path configs/resnet34.yaml --options optim.seed=1
+python train.py --config_path configs/resnet34_base.yaml
+python train.py --config_path configs/resnet34_base.yaml --options optim.seed=1
