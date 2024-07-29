@@ -135,9 +135,12 @@ def main():
     dataset_test = CUBDataset((dataset_dir / "test_cropped").as_posix(),
                               attribute_labels_path.as_posix(),
                               transforms=transforms)
+    dataset_projection = CUBDataset((dataset_dir / "train_cropped").as_posix(),
+                                    attribute_labels_path.as_posix(),
+                                    transforms=transforms)
     dataloader_train = DataLoader(dataset=dataset_train, batch_size=80, num_workers=8, shuffle=True)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=100, num_workers=8, shuffle=False)
-    dataloader_projection = DataLoader(dataset=dataset_train, batch_size=75, num_workers=8, shuffle=False)
+    dataloader_projection = DataLoader(dataset=dataset_projection, batch_size=75, num_workers=8, shuffle=False)
 
     # Load model
     backbone, backbone_dim = load_backbone(config.model.backbone)
@@ -209,7 +212,7 @@ def main():
             lr_scheduler = lr_scheduler_joint
 
         elif epoch in config.optim.final_epoch_start:
-
+            logger.info(f"Start prototype projection before epoch {epoch}...")
             projection_results = project_prototypes(ppnet, dataloader_projection, device=device)
             torch.save(projection_results, log_dir / f"projection_results_epoch{epoch}.pth")
             writer.add_histogram("Projection_Min_Dists", projection_results["min_l2_dists"], epoch)
