@@ -42,13 +42,9 @@ def project_prototypes(net: nn.Module, dataloader: DataLoader, device: torch.dev
             # TODO adapt to prototypes with spacial dimensions
             sample_index, patch_y, patch_x = torch.unravel_index(torch.argmin(proto_i_batch_l2_dists),
                                                                 proto_i_batch_l2_dists.shape)
-            
-            proto_i_batch_nearest_patch = target_class_features[sample_index, :, patch_y, patch_x]
-            nearset_latent_patches[i, :, 0, 0] = proto_i_batch_nearest_patch
+            nearset_latent_patches[i, :, 0, 0] = target_class_features[sample_index, :, patch_y, patch_x]
 
-            nearset_patch_coords[i, :] = torch.tensor([sample_index, patch_y, patch_x])
-
-    net.prototype_vectors.data.copy_(nearset_patch_coords)
+    net.prototype_vectors.data.copy_(nearset_latent_patches)
     
     return dict(
         nearset_patch_coords=nearset_patch_coords.detach().cpu(),
