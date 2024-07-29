@@ -75,6 +75,7 @@ class ProtoPNet(nn.Module):
 
         return dict(
             projected_features=f,
+            min_dists=min_dists,
             l2_dists=dists,
             activations=activations,
             logits=logits
@@ -110,7 +111,7 @@ class ProtoPNetLoss(nn.Module):
                 batch: dict[str, torch.Tensor],
                 proto_class_association: torch.Tensor,
                 fc_weights: torch.Tensor):
-        logits, min_dists = outputs
+        logits, min_dists = outputs["logits"], outputs["min_dists"]
         _, labels, _ = batch
         loss_dict = dict()
         loss_dict["l_y"] = self.xe(logits, labels)

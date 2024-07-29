@@ -35,7 +35,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
         batch = tuple(item.to(device) for item in batch)
         images, labels, _ = batch
         outputs = model(images)
-        logits, dists = outputs
+        logits = outputs["logits"]
         loss_dict = criterion(outputs=outputs,
                               batch=batch,
                               proto_class_association=model.proto_class_association,
