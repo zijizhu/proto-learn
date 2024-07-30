@@ -85,22 +85,18 @@ def visualize_top_prototypes(axes,
     """
     im_raw = Image.open(im_path).convert("RGB")
     im_transformed = transforms(im_raw).unsqueeze(0).to(device)
-    if with_concepts:
-        outputs = net(im_transformed, with_concepts)
-        outputs = tuple(item.detach().cpu().squeeze() for item in outputs)
-        logits, concept_logits, min_dists, attn_maps = outputs
-    else:
-        outputs = net.inference(im_transformed)
-        outputs = tuple(item.detach().cpu().squeeze() for item in outputs)
-        logits, min_dists, attn_maps = outputs
+    
+    outputs = net(im_transformed)
+    outputs = tuple(item.detach().cpu().squeeze() for item in outputs)
+    min_dists, full_l2_dists = outputs["min_dists"], outputs["l2_dists"]
 
     topk_negative_dists, topk_proto_indices = torch.topk(-min_dists, k=5)
     least_k_min_dists = -topk_negative_dists
     topk_similarities = distance_to_similarity(least_k_min_dists)
 
     # Process attention maps
-    attn_maps = attn_maps.squeeze()[topk_proto_indices]
-    attn_maps = distance_to_similarity(attn_maps)
+    full_l2_dists = full_l2_dists.squeeze()[topk_proto_indices]
+    attn_maps = distance_to_similarity(full_l2_dists)
     attn_maps = F.resize(attn_maps, [224, 224], F.InterpolationMode.BICUBIC)
 
     for i, (amap, proto_index, ax_row, dist, similarity) in enumerate(

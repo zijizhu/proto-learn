@@ -15,7 +15,6 @@ from tqdm import tqdm
 
 from models.backbone import load_backbone
 from cub_dataset import CUBDataset
-from models.ppnet import ProtoPNet, get_projection_layer
 from models.pp_concept_net import ProtoPConceptNet
 
 
@@ -58,14 +57,24 @@ def main():
     dataloader_train = DataLoader(dataset=dataset_train, batch_size=8, num_workers=8, shuffle=False)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=8, num_workers=8, shuffle=False)
 
-    backbone, dim = load_backbone(backbone_name=config.model.backbone)
-    proj_layers = get_projection_layer(config.model.proj_layers, first_dim=dim)
+    
     if with_concepts:
+        from models.pp_concept_net import ProtoPNet, get_projection_layer
+        backbone, dim = load_backbone(backbone_name=config.model.backbone)
+        proj_layers = get_projection_layer(config.model.proj_layers, first_dim=dim)
         ppnet = ProtoPConceptNet(backbone, proj_layers, dataset_train.attributes, tuple(config.model.prototype_shape))
+    elif "dino" in config.model.name:
+        from models.ppnet_dino import ProtoPNetDINO, get_projection_layer
+        proj_layers = get_projection_layer(config.model.proj_layers)
+    
+        ppnet = ProtoPNetDINO("dinov2_vitb14_reg", proj_layers=proj_layers,
+                              prototype_shape=tuple(config.model.prototype_shape), num_classes=200)
     else:
+        from models.ppnet import ProtoPNet, get_projection_layer
         ppnet = ProtoPNet(backbone, proj_layers, tuple(config.model.prototype_shape), 200)
-        state_dict = torch.load(log_dir / "ppnet_best.pth")
-        ppnet.load_state_dict(state_dict)
+
+    state_dict = torch.load(log_dir / "ppnet_best.pth")
+    ppnet.load_state_dict(state_dict)
 
     writer = SummaryWriter(log_dir.as_posix())
 
