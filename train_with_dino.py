@@ -100,9 +100,11 @@ def main():
         config.merge_with_dotlist(args.options)
     else:
         log_dir /= config_path.stem
-    log_dir.mkdir(parents=True, exist_ok=True)
+    
     print("Configuration:")
     print(OmegaConf.to_yaml(config))
+
+    log_dir.mkdir(parents=True, exist_ok=True)
     OmegaConf.save(config=config, f=log_dir / "config.yaml")
 
     logging.basicConfig(
@@ -180,7 +182,7 @@ def main():
     ]
     
     optimizer_joint = optim.Adam(joint_param_groups)
-    lr_scheduler_joint = optim.lr_scheduler.StepLR(optimizer_joint, step_size=5, gamma=0.1)
+    lr_scheduler_joint = optim.lr_scheduler.StepLR(optimizer_joint, step_size=7, gamma=0.1)
 
     if config.optim.final:
         final_param_groups = [
@@ -196,7 +198,7 @@ def main():
     best_epoch, best_val_acc = 0, 0.
 
     # epoch: 0-9 joint; 10-29 final; 30-40 joint; 40-60 final
-    for epoch in range(60):
+    for epoch in range(config.optim.epochs):
         if epoch in config.optim.joint.epoch_start:
             epoch_name = "joint"
             for param in ppnet.backbone.parameters():

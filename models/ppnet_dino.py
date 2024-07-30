@@ -129,9 +129,10 @@ class ProtoPNetLoss(nn.Module):
             loss_dict["_l_clst_raw"] = l_clst
             loss_dict["_l_sep_raw"] = l_sep
 
-        l1_mask = 1 - proto_class_association.T
-        l1 = (fc_weights * l1_mask).norm(p=1)
-        loss_dict["l_l1"] = self.l_l1_coef * l1
+        if self.l_l1_coef > 0:
+            l1_mask = 1 - proto_class_association.T
+            l1 = (fc_weights * l1_mask).norm(p=1)
+            loss_dict["l_l1"] = self.l_l1_coef * l1
         return loss_dict
 
     @staticmethod
