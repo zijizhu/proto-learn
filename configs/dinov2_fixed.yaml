@@ -17,5 +17,5 @@ optim:
     proj_lr: 3e-3
     proj_weight_decay: 1e-3
     proto_lr: 3e-3
-  final: None
+  final: null
   seed: 42
