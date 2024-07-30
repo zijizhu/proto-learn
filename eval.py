@@ -105,8 +105,8 @@ def main():
             
             logits, dists = outputs["logits"], outputs["l2_dists"]
 
-            all_sample_proto_dists.append(dists)
-            all_logits.append(logits)
+            all_sample_proto_dists.append(dists.detach().cpu())
+            all_logits.append(logits.detach().cpu())
 
     # Compute top k patches from training set that has smallest l2 distance to each prototype
     train_proto_dists = torch.cat(all_sample_proto_dists).cpu()
