@@ -13,7 +13,8 @@ model:
   l_l1_coef: 1e-4
 optim:
   joint:
-    epoch_start: 0
+    epoch_start:
+      - 0
     proj_lr: 3e-3
     proj_weight_decay: 1e-3
     proto_lr: 3e-3
