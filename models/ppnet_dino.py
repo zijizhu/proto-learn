@@ -10,9 +10,10 @@ class ProtoPNetDINO(nn.Module):
                  prototype_shape: tuple, num_classes: int, init_weights=True, activation_fn='log'):
         super().__init__()
         self.prototype_shape = prototype_shape
-        self.num_prototypes, self.dim, _, _ = prototype_shape
+        self.num_prototypes, self.dim, proto_size, proto_size = prototype_shape
         self.num_classes = num_classes
         self.epsilon = 1e-4
+        self.stride = proto_size
 
         assert activation_fn in ["log", "linear"]
         self.activation_fn = activation_fn
@@ -35,7 +36,7 @@ class ProtoPNetDINO(nn.Module):
         if init_weights:
             self._init_weights()
 
-    def _l2_dists(self, x):
+    def _l2_dists(self, x, stride=1):
         """
         Compute x ** 2 - 2 * x * prototype + prototype ** 2,
         where x is a feature map of shape
@@ -43,14 +44,14 @@ class ProtoPNetDINO(nn.Module):
         All spacial values of p2_reshape at each channel are the same
         """
         x2 = x ** 2  # shape: [b, c, h, w]
-        x2_patch_sum = F.conv2d(input=x2, weight=self.ones)  # shape: [b, num_prototypes, h, w]
+        x2_patch_sum = F.conv2d(input=x2, weight=self.ones, stride=stride)  # shape: [b, num_prototypes, h, w]
 
         p2 = self.prototype_vectors ** 2
         p2 = torch.sum(p2, dim=(1, 2, 3))  # shape [num_prototypes, ]
         p2_reshape = p2.view(-1, 1, 1) # shape [num_prototypes, 1, 1]
 
-        xp = F.conv2d(input=x, weight=self.prototype_vectors)
-        intermediate_result = - 2 * xp + p2_reshape  # p2_reshape broadcasted to [b, num_prototypes, h, wv]
+        xp = F.conv2d(input=x, weight=self.prototype_vectors, stride=stride)
+        intermediate_result = - 2 * xp + p2_reshape  # p2_reshape broadcasted to [b, num_prototypes, h, w]
 
         distances = F.relu(x2_patch_sum + intermediate_result)
 
@@ -66,7 +67,7 @@ class ProtoPNetDINO(nn.Module):
         feature_dict = self.backbone.forward_features(x)
         f = rearrange(feature_dict["x_norm_patchtokens"], " b (h w) c -> b c h w", h=16, w=16)
         f = self.proj(f)
-        dists = self._l2_dists(f)  # shape: [b, num_prototypes, h, w]
+        dists = self._l2_dists(f, stride=self.stride)  # shape: [b, num_prototypes, h, w]
         b, num_prototypes, h, w = dists.shape
 
         # 2D min pooling

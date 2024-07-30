@@ -5,23 +5,17 @@ model:
   prototype_shape:
     - 2000
     - 128
-    - 1
-    - 1
+    - 2
+    - 2
   proj_layers: "128,relu,128,sigmoid"
   l_clst_coef: 0.8
   l_sep_coef: -0.08
   l_l1_coef: 1e-4
 optim:
   joint:
-    epoch_start:
-      - 0
-      - 30
+    epoch_start: 0
     proj_lr: 3e-3
     proj_weight_decay: 1e-3
     proto_lr: 3e-3
-  final:
-    epoch_start:
-      - 10
-      - 30
-    fc_lr: 1e-4
+  final: None
   seed: 42

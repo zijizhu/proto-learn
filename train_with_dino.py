@@ -119,28 +119,39 @@ def main():
 
     L.seed_everything(config.optim.seed)
 
-    # Load data
+    # Construct augmentations
     input_size = config.model.input_size
-    transforms = T.Compose([
-        T.Resize((input_size, input_size,)),
-        T.ToTensor(),
-        T.Normalize(mean=(0.485, 0.456, 0.406,),
-                    std=(0.229, 0.224, 0.225,))
-    ])
+    normalize = T.Normalize(mean=(0.485, 0.456, 0.406,), std=(0.229, 0.224, 0.225,))
+    test_transforms = T.Compose([
+            T.Resize((input_size, input_size,)),
+            T.ToTensor(),
+            normalize
+        ])
     if config.model.augmentation:
-        dataset_dir = Path("datasets") / "cub200_cropped"
+        attribute_labels_path = Path("datasets") / "class_attribute_labels_continuous.txt"
+        train_transforms = test_transforms
     else:
-        dataset_dir = Path("datasets") / "CUB_200_2011"
-    attribute_labels_path = Path("datasets") / "class_attribute_labels_continuous.txt"
-    dataset_train = CUBDataset((dataset_dir / "train_cropped_augmented").as_posix(),
+        attribute_labels_path = Path("datasets") / "class_attribute_labels_continuous.txt"
+        train_transforms = T.Compose([
+            T.Resize((input_size, input_size,)),
+            T.RandomAffine(degrees=(-25, 25), shear=15),
+            T.RandomHorizontalFlip(),
+            T.ToTensor(),
+            normalize,
+        ])
+    
+    # Load datasets and dataloaders
+    dataset_dir = Path("datasets") / "cub200_cropped"
+    training_set_path = "train_cropped_augmented" if config.model.augmentation else "train_cropped"
+    dataset_train = CUBDataset((dataset_dir / training_set_path).as_posix(),
                                attribute_labels_path.as_posix(),
-                               transforms=transforms)
+                               transforms=train_transforms)
     dataset_test = CUBDataset((dataset_dir / "test_cropped").as_posix(),
                               attribute_labels_path.as_posix(),
-                              transforms=transforms)
+                              transforms=test_transforms)
     dataset_projection = CUBDataset((dataset_dir / "train_cropped").as_posix(),
                                     attribute_labels_path.as_posix(),
-                                    transforms=transforms)
+                                    transforms=test_transforms)
     dataloader_train = DataLoader(dataset=dataset_train, batch_size=80, num_workers=8, shuffle=True)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=100, num_workers=8, shuffle=False)
     dataloader_projection = DataLoader(dataset=dataset_projection, batch_size=75, num_workers=8, shuffle=False)
@@ -171,11 +182,12 @@ def main():
     optimizer_joint = optim.Adam(joint_param_groups)
     lr_scheduler_joint = optim.lr_scheduler.StepLR(optimizer_joint, step_size=5, gamma=0.1)
 
-    final_param_groups = [
-        {'params': ppnet.fc.parameters(),
-         'lr': config.optim.final.fc_lr}
-    ]
-    optimizer_final = optim.Adam(final_param_groups)
+    if config.optim.final:
+        final_param_groups = [
+            {'params': ppnet.fc.parameters(),
+            'lr': config.optim.final.fc_lr}
+        ]
+        optimizer_final = optim.Adam(final_param_groups)
     
     # Prepare for training
     writer = SummaryWriter(log_dir=log_dir.as_posix())
@@ -185,7 +197,7 @@ def main():
 
     # epoch: 0-9 joint; 10-29 final; 30-40 joint; 40-60 final
     for epoch in range(60):
-        if epoch in config.optim.joint_epoch_start:
+        if epoch in config.optim.joint.epoch_start:
             epoch_name = "joint"
             for param in ppnet.backbone.parameters():
                 param.requires_grad = False
@@ -197,7 +209,7 @@ def main():
             optimizer = optimizer_joint
             lr_scheduler = lr_scheduler_joint
 
-        elif epoch in config.optim.final_epoch_start:
+        elif config.optim.final and epoch in config.optim.final.epoch_start:
             logger.info(f"Perform prototype projection before epoch {epoch}...")
             projection_results = project_prototypes(ppnet, dataloader_projection, device=device)
             torch.save(projection_results, log_dir / f"projection_results_epoch{epoch}.pth")
