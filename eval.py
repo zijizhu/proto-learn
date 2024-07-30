@@ -63,7 +63,7 @@ def main():
         backbone, dim = load_backbone(backbone_name=config.model.backbone)
         proj_layers = get_projection_layer(config.model.proj_layers, first_dim=dim)
         ppnet = ProtoPConceptNet(backbone, proj_layers, dataset_train.attributes, tuple(config.model.prototype_shape))
-    elif "dino" in config.model.name:
+    elif "dino" in config.model.backbone:
         from models.ppnet_dino import ProtoPNetDINO, get_projection_layer
         proj_layers = get_projection_layer(config.model.proj_layers)
     
