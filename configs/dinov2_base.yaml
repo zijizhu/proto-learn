@@ -1,5 +1,6 @@
 model:
   input_size: 224
+  augmentation: False
   backbone: dinov2_vitb14_reg
   prototype_shape:
     - 2000

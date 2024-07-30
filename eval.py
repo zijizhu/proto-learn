@@ -124,6 +124,8 @@ def main():
     # shape: [num_proto, topk, patch_h, patch_w], [num_proto, topk, input_h, input_w]
     proto_to_patches = [[None] * 5 for _ in range(num_proto)]
     proto_to_src_images = [[None] * 5 for _ in range(num_proto)]
+    
+    latent_size = 16 if "dino" in config.model.backbone else 7
 
     for i, sample in enumerate(tqdm(dataset_train.samples)):
         im_path, label = sample
@@ -139,7 +141,7 @@ def main():
 
         for proto_idx, topk_idx, c in zip(proto_indices, topk_indices, coords.tolist()):
             _, patch_h, patch_w = c
-            y, x, w, h = patch_coord_to_bbox((patch_h, patch_w,))
+            y, x, w, h = patch_coord_to_bbox((patch_h, patch_w,), latent_size=latent_size)
             patch_cropped = im_pt[:, y:y + h, x:x + w]
             src_im_with_bbox = draw_bounding_boxes(im_pt, boxes=torch.tensor([[x, y, x + w, y + h]]),
                                                    colors="red", width=2)
