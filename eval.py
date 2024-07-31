@@ -88,6 +88,7 @@ def main():
         with torch.inference_mode():
             for batch in tqdm(dataloader_test):
                 batch = tuple(item.to(device) for item in batch)
+                gt = ...
                 images, labels, _ = batch
                 outputs = ppnet(images)
                 mca(outputs["logits"], labels)
