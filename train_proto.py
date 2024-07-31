@@ -86,14 +86,13 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     log_dir = Path("tmp.log")
-    log_dir.mkdir(parents=True, exist_ok=True)
 
     logging.basicConfig(
         level=logging.INFO,
         format="[%(asctime)s][%(name)s][%(levelname)s] - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[
-            logging.FileHandler(os.path.join(log_dir, "train.log")),
+            logging.FileHandler(log_dir.as_posix()),
             logging.StreamHandler(sys.stdout),
         ],
         force=True,
