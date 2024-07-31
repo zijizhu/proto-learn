@@ -38,7 +38,6 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
         outputs = model(images,
                         pretrain_prototype=False,
                         gt_semantic_seg=gt[:, None, ...])
-        print(outputs)
         clf_logits = outputs["seg"].sum((-1, -2,))
         total_loss = criterion(outputs, gt)
 
@@ -72,7 +71,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int,
             batch = tuple(item.to(device) for item in batch)
             images, labels, _ = batch
             outputs = model(images)
-            clf_logits = outputs["seg"].sum((-1, -2,))
+            clf_logits = outputs.sum((-1, -2,))
 
             mca_val(clf_logits, labels)
 
@@ -122,7 +121,7 @@ def main():
     # dataset_projection = CUBDataset((dataset_dir / "train_cropped").as_posix(),
     #                                 attribute_labels_path.as_posix(),
     #                                 transforms=transforms)
-    dataloader_train = DataLoader(dataset=dataset_train, batch_size=2, num_workers=8, shuffle=True)
+    dataloader_train = DataLoader(dataset=dataset_train, batch_size=80, num_workers=8, shuffle=True)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=100, num_workers=8, shuffle=False)
     # dataloader_projection = DataLoader(dataset=dataset_projection, batch_size=75, num_workers=8, shuffle=False)
 

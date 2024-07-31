@@ -26,8 +26,7 @@ class ProtoNet(nn.Module):
 
         in_channels = 512
         self.proj = nn.Linear(768, 512)
-        self.prototypes = nn.Parameter(torch.zeros(self.num_classes, self.num_prototype, in_channels),
-                                       requires_grad=True)
+        self.register_buffer("prototypes", torch.zeros(self.num_classes, self.num_prototype, in_channels))
 
         self.feat_norm = nn.LayerNorm(in_channels)
         self.mask_norm = nn.LayerNorm(self.num_classes)
@@ -44,7 +43,6 @@ class ProtoNet(nn.Module):
         _, pred_seg = torch.max(out_seg, 1)  # sengmentation prediciton in int64, shape: [b, h, w]
         # flat bool arrary indicate if prediction in batch is correct, shape: [(b*h*w),]
         mask = (gt_seg == pred_seg.view(-1))
-        print("mask:", mask.shape, mask.dtype)
 
         # cosine similarity of l2 normalized batch features and prototypes shape: [(b*h*w), (k*m)]
         cosine_similarity = torch.mm(_c, self.prototypes.view(-1, self.prototypes.shape[-1]).t())
@@ -62,7 +60,6 @@ class ProtoNet(nn.Module):
                 continue
 
             q, indexs = distributed_sinkhorn(init_q)
-            print("q.shape:", q.shape)
 
             m_k = mask[gt_seg == k]  # shape: [n,], dtype: bool
 
@@ -81,7 +78,6 @@ class ProtoNet(nn.Module):
             f = m_q.transpose(0, 1) @ c_q  # self.num_prototype x embedding_dim
 
             n = torch.sum(m_q, dim=0) # shape: [,self.num_prototype]
-            print("n.shape:", n.shape)
 
             if torch.sum(n) > 0 and self.update_prototype is True:
                 f = F.normalize(f, p=2, dim=-1)
@@ -92,14 +88,12 @@ class ProtoNet(nn.Module):
 
             proto_target[gt_seg == k] = indexs.float() + (self.num_prototype * k)
 
-        self.prototypes = nn.Parameter(l2_normalize(protos),
-                                       requires_grad=False)
+        self.prototypes = l2_normalize(protos).detach().clone()
         return proto_logits, proto_target
 
     def forward(self, x_, gt_semantic_seg=None, pretrain_prototype=False):
         feature_dict = self.backbone.forward_features(x_)
         f = self.proj(feature_dict["x_norm_patchtokens"])
-        print(f.shape)
 
         b, hw, c = f.shape
         h = w = int(sqrt(hw))
@@ -112,12 +106,10 @@ class ProtoNet(nn.Module):
 
         # n: b*h*w, k: num_class, m: num_prototype
         masks = torch.einsum('nd,kmd->nmk', _c, self.prototypes)
-        print(_c.shape)
 
         out_seg = torch.amax(masks, dim=1)
         out_seg = self.mask_norm(out_seg)
         out_seg = rearrange(out_seg, "(b h w) k -> b k h w", b=b, h=h, w =w)
-        print("out_seg.shape:", out_seg.shape, out_seg.dtype)
 
         if pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
             gt_seg = gt_semantic_seg.reshape(-1)
