@@ -37,7 +37,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
         outputs = model(images,
                         pretrain_prototype=False,
                         gt=labels)
-        clf_logits = outputs["seg"].sum((-1, -2,))[:-1]
+        clf_logits = outputs["seg"].sum((-1, -2,))[:, :-1]
         total_loss = criterion(outputs, outputs["pseudo_gt"])
 
         # total_loss = sum(v for k, v in loss_dict.items() if not k.startswith("_"))
@@ -162,6 +162,7 @@ def main():
         if epoch_acc_val > best_val_acc:
             best_val_acc = epoch_acc_val
             best_epoch = epoch
+            torch.save({k: v.cpu() for k, v in net.state_dict().items()}, "dino_v2_proto.pth")
             logger.info("Best epoch found, model saved!")
 
     logger.info(f"DONE! Best epoch is epoch {best_epoch} with accuracy {best_val_acc}.")
