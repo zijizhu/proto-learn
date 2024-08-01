@@ -70,7 +70,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int,
             batch = tuple(item.to(device) for item in batch)
             images, labels, _ = batch
             outputs = model(images)
-            clf_logits = outputs.sum((-1, -2,))[:-1]
+            clf_logits = outputs["class_logits"].sum((-1, -2,))[:, :-1]
 
             mca_val(clf_logits, labels)
 
