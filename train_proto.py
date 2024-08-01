@@ -34,12 +34,11 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
     for batch in tqdm(dataloader):
         batch = tuple(item.to(device) for item in batch)
         images, labels, _ = batch
-        gt = repeat(labels, "b -> b h w", h=16, w=16)
         outputs = model(images,
                         pretrain_prototype=False,
-                        gt_semantic_seg=gt[:, None, ...])
-        clf_logits = outputs["seg"].sum((-1, -2,))
-        total_loss = criterion(outputs, gt)
+                        gt=labels)
+        clf_logits = outputs["seg"].sum((-1, -2,))[:-1]
+        total_loss = criterion(outputs, labels)
 
         # total_loss = sum(v for k, v in loss_dict.items() if not k.startswith("_"))
         total_loss.backward()
@@ -71,7 +70,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int,
             batch = tuple(item.to(device) for item in batch)
             images, labels, _ = batch
             outputs = model(images)
-            clf_logits = outputs.sum((-1, -2,))
+            clf_logits = outputs.sum((-1, -2,))[:-1]
 
             mca_val(clf_logits, labels)
 
