@@ -104,7 +104,7 @@ class ProtoNet(nn.Module):
         
         pseudo_gt = torch.where(U_scaled < self.pseudo_gt_threshold,
                                 repeat(batch_labels, "b -> b H W", H=H, W=W),
-                                self.num_classes)
+                                self.num_classes - 1)
         
         return pseudo_gt
 
