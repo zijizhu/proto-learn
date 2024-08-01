@@ -111,7 +111,7 @@ class ProtoNet(nn.Module):
     def forward(self, x_, gt=None, pretrain_prototype=False):
         feature_dict = self.backbone.forward_features(x_)
         patch_tokens = feature_dict["x_norm_patchtokens"]
-        if gt:
+        if gt is not None:
             pseudo_gt = self.ged_pseudo_gt(patch_tokens.detach(), gt)
         f = self.proj(patch_tokens)
 
@@ -135,6 +135,7 @@ class ProtoNet(nn.Module):
             gt_seg = pseudo_gt.reshape(-1)
             # gt_seg = F.interpolate(gt_semantic_seg.float(), size=(h, w), mode='nearest').view(-1)
             contrast_logits, contrast_target = self.prototype_learning(_c, out_seg, gt_seg, masks)
-            return {'seg': out_seg, 'logits': contrast_logits, 'target': contrast_target}
+            return {'seg': out_seg, 'logits': contrast_logits,
+                    'target': contrast_target, "pseudo_gt": pseudo_gt}
 
         return {"class_logits": out_seg, "prototype_logits": masks}

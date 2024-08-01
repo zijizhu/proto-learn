@@ -38,7 +38,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
                         pretrain_prototype=False,
                         gt=labels)
         clf_logits = outputs["seg"].sum((-1, -2,))[:-1]
-        total_loss = criterion(outputs, labels)
+        total_loss = criterion(outputs, outputs["pseudo_gt"])
 
         # total_loss = sum(v for k, v in loss_dict.items() if not k.startswith("_"))
         total_loss.backward()
