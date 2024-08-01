@@ -62,7 +62,6 @@ class ProtoNet(nn.Module):
                 continue
 
             q, indexs = distributed_sinkhorn(init_q)
-            print("q.shape:", q.shape)
 
             m_k = mask[gt_seg == k]  # shape: [n,], dtype: bool
 
