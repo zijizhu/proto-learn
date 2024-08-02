@@ -3,6 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 from einops import repeat, rearrange
 from math import sqrt
+from collections import defaultdict
 
 from timm.models.layers import trunc_normal_
 
@@ -35,7 +36,7 @@ class ProtoNet(nn.Module):
 
         trunc_normal_(self.prototypes, std=0.02)
 
-    def prototype_learning(self, _c, out_seg, gt_seg, masks):
+    def prototype_learning(self, _c, out_seg, gt_seg, masks, debug=False):
         """
         _c: l2-normalized features of the whole batch, shape: [(b*h*w), d]
         out_seg: batch segmentation class logits, shape: [b, k, h, w]
@@ -55,6 +56,10 @@ class ProtoNet(nn.Module):
         # Perform clustering for each class
         # And update prototypes with weighted mean of the clusters
         protos = self.prototypes.data.clone()
+        if debug:
+            q_dict = dict()
+        else:
+            q_dict = None
         for k in range(self.num_classes):
             init_q = masks[..., k]  # shape: [(b*h*w), m]
             init_q = init_q[gt_seg == k, ...]  # shape: [n, m]
@@ -89,11 +94,14 @@ class ProtoNet(nn.Module):
                 protos[k, n != 0, :] = new_value
 
             proto_target[gt_seg == k] = indexs.float() + (self.num_prototype * k)
+            
+            if debug:
+                q_dict[k] = q.detach()
 
         self.prototypes = l2_normalize(protos).detach().clone()
-        return proto_logits, proto_target
+        return proto_logits, proto_target, q_dict
 
-    def ged_pseudo_gt(self, batch_patch_tokens: torch.Tensor, batch_labels: torch.Tensor):
+    def get_pseudo_gt(self, batch_patch_tokens: torch.Tensor, batch_labels: torch.Tensor):
         B, HW, C = batch_patch_tokens.shape
         H = W = int(sqrt(HW))
         U,_, _ = torch.pca_lowrank(batch_patch_tokens.reshape(-1, self.backbone_dim),
@@ -107,11 +115,11 @@ class ProtoNet(nn.Module):
         
         return pseudo_gt
 
-    def forward(self, x_, gt=None, pretrain_prototype=False):
+    def forward(self, x_, gt=None, pretrain_prototype=False, debug=False):
         feature_dict = self.backbone.forward_features(x_)
         patch_tokens = feature_dict["x_norm_patchtokens"]
         if gt is not None:
-            pseudo_gt = self.ged_pseudo_gt(patch_tokens.detach(), gt)
+            pseudo_gt = self.get_pseudo_gt(patch_tokens.detach(), gt)
         f = self.proj(patch_tokens)
 
         b, hw, c = f.shape
@@ -133,8 +141,8 @@ class ProtoNet(nn.Module):
         if pretrain_prototype is False and self.use_prototype is True and gt is not None:
             gt_seg = pseudo_gt.reshape(-1)
             # gt_seg = F.interpolate(gt_semantic_seg.float(), size=(h, w), mode='nearest').view(-1)
-            contrast_logits, contrast_target = self.prototype_learning(_c, out_seg, gt_seg, masks)
+            contrast_logits, contrast_target, q_dict = self.prototype_learning(_c, out_seg, gt_seg, masks, debug=debug)
             return {'seg': out_seg, 'logits': contrast_logits,
-                    'target': contrast_target, "pseudo_gt": pseudo_gt}
+                    'target': contrast_target, "pseudo_gt": pseudo_gt, "q_dict": q_dict}
 
         return {"class_logits": out_seg, "prototype_logits": masks}

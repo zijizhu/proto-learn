@@ -31,13 +31,20 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
     running_losses = defaultdict(float)
     mca_train = MulticlassAccuracy(num_classes=len(dataloader.dataset.classes), average="micro").to(device)
 
+    debug = epoch in [5, 10, 15]
+    if debug:
+        q_dicts = []
+
     for batch in tqdm(dataloader):
         batch = tuple(item.to(device) for item in batch)
         images, labels, _ = batch
         outputs = model(images,
                         pretrain_prototype=False,
-                        gt=labels)
+                        gt=labels,
+                        debug=debug)
         clf_logits = outputs["seg"].sum((-1, -2,))[:, :-1]
+        if debug:
+            q_dicts.append(outputs["q_dict"])
         total_loss = criterion(outputs, outputs["pseudo_gt"])
 
         # total_loss = sum(v for k, v in loss_dict.items() if not k.startswith("_"))
@@ -58,6 +65,9 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
     epoch_acc_train = mca_train.compute().item()
     # summary_writer.add_scalar("Acc/train", epoch_acc_train, epoch)
     logger.info(f"EPOCH {epoch} {epoch_name} train acc: {epoch_acc_train:.4f}")
+    
+    if q_dicts:
+        torch.save(q_dicts, f"q_dict_epoch{epoch}.pth")
 
 
 @torch.inference_mode()
