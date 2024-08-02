@@ -66,7 +66,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
     # summary_writer.add_scalar("Acc/train", epoch_acc_train, epoch)
     logger.info(f"EPOCH {epoch} {epoch_name} train acc: {epoch_acc_train:.4f}")
     
-    if q_dicts:
+    if debug:
         torch.save(q_dicts, f"q_dict_epoch{epoch}.pth")
 
 
