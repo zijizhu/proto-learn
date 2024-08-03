@@ -20,7 +20,8 @@ from einops import repeat
 
 from cub_dataset import CUBDataset
 from projection import project_prototypes
-from models.proto import PixelPrototypeCELoss, ProtoNet
+from models.utils import PixelPrototypeCELoss
+from models.proto import ProtoNet
 
 
 def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion: nn.Module,
