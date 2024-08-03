@@ -1,13 +1,16 @@
-import torch
-from torch import nn
-import torch.nn.functional as F
-from einops import repeat, rearrange, einsum
 from math import sqrt
-from collections import defaultdict
 
+import torch
+import torch.nn.functional as F
+from einops import rearrange, repeat
 from timm.models.layers import trunc_normal_
+from torch import nn
 
-from models.utils import momentum_update, distributed_sinkhorn, l2_normalize, PixelPrototypeCELoss
+from models.utils import (
+    distributed_sinkhorn,
+    l2_normalize,
+    momentum_update,
+)
 
 
 class ProtoNet(nn.Module):
@@ -27,31 +30,31 @@ class ProtoNet(nn.Module):
         self.backbone = torch.hub.load('facebookresearch/dinov2', "dinov2_vitb14_reg")
 
         self.backbone_dim = 768
-        in_channels = 256
-        self.proj = nn.Linear(self.backbone_dim, in_channels)
-        self.register_buffer("prototypes", torch.zeros(self.num_classes, self.num_prototype, in_channels))
+        self.dim = 256
+        self.proj = nn.Linear(self.backbone_dim, self.dim)
+        self.register_buffer("prototypes", torch.zeros(self.num_classes, self.num_prototype, self.dim))
 
-        self.feat_norm = nn.LayerNorm(in_channels)
+        self.feat_norm = nn.LayerNorm(self.dim)
         self.class_norm = nn.LayerNorm(self.num_classes)
 
         trunc_normal_(self.prototypes, std=0.02)
 
-    def update_prototypes(self, _c, out_seg, gt_seg, masks, debug=False):
+    def update_prototypes(self, patches, patch_class_logits, pseudo_gt, masks, debug=False):
         """
-        _c: l2-normalized features of the whole batch, shape: [(b*h*w), d]
-        out_seg: batch segmentation class logits, shape: [b, k, h, w]
-        gt_seg: batch segmentation ground truth (downsampled and turned into float), shape: [(b*h*w),]
-        masks: batch segmentation logits per prototype, shape: [(b*h*w), m, k]
+        patches: l2-normalized features of the whole batch, shape: [(B*H*W), dim]
+        patch_class_logits: batch class logits for each patch, shape: [B, C, H, W]
+        pseudo_gt: Pseudo ground truth class id for each class, shape: [(B*H*W),]
+        patch_prototype_logits: batch prototype logits for each patch, shape: [(B*H*W), c, C]
         """
-        _, pred_seg = torch.max(out_seg, 1)  # sengmentation prediciton in int64, shape: [b, h, w]
-        # flat bool arrary indicate if prediction in batch is correct, shape: [(b*h*w),]
-        mask = (gt_seg == pred_seg.view(-1))
+        _, preds = torch.max(patch_class_logits, 1)  # patch prediciton in int64, shape: [B, H, W]
+        # flat bool arrary indicate if prediction in batch is correct, shape: [(B*H*W),]
+        correct = (pseudo_gt == preds.view(-1))
 
-        # cosine similarity of l2 normalized batch features and prototypes shape: [(b*h*w), (k*m)]
-        cosine_similarity = torch.mm(_c, self.prototypes.view(-1, self.prototypes.shape[-1]).t())
+        # cosine similarity of l2 normalized batch features and prototypes shape: [(B*H*W), (C*c)]
+        cosine_similarity = torch.mm(patches, self.prototypes.view(-1, self.dim).t())
 
-        proto_logits = cosine_similarity  # shape: shape: [(b*h*w), (k*m)]
-        proto_target = gt_seg.clone().float()  # shape: [b, h, w]
+        proto_logits = cosine_similarity  # shape: shape: [(B*H*W), (c*m)]
+        proto_target = pseudo_gt.clone().float()  # shape: [b, h, w]
 
         # Perform clustering for each class
         # And update prototypes with weighted mean of the clusters
@@ -60,57 +63,57 @@ class ProtoNet(nn.Module):
             q_dict = dict()
         else:
             q_dict = None
-        for k in range(self.num_classes):
-            init_q = masks[..., k]  # shape: [(b*h*w), m]
-            init_q = init_q[gt_seg == k, ...]  # shape: [n, m]
+        for c in range(self.num_classes):
+            init_q = masks[..., c]  # shape: [(B*H*W), m]
+            init_q = init_q[pseudo_gt == c, ...]  # shape: [n, m]
             if init_q.shape[0] == 0:
                 continue
 
-            q, indexs = distributed_sinkhorn(init_q)
+            L, indexs = distributed_sinkhorn(init_q)
 
-            m_k = mask[gt_seg == k]  # shape: [n,], dtype: bool
+            correct_c = correct[pseudo_gt == c]  # shape: [n,], dtype: bool
 
-            c_k = _c[gt_seg == k, ...]  # shape: [n, d]
+            patches_c = patches[pseudo_gt == c, ...]  # shape: [n, dim]
 
-            m_k_tile = repeat(m_k, 'n -> n tile', tile=self.num_prototype)  # shape: [n, m], dtype: bool
+            L_correct_mask = repeat(correct_c, 'n -> n dim', dim=self.num_prototype)  # shape: [n, m], dtype: bool
 
-            # Final prototype logits for each pixel masked by if they are correctly clustered
-            m_q = q * m_k_tile  # n x self.num_prototype
+            # Final prototype patch_prototype_logits for each pixel masked by if they are correctly clustered
+            L_correct = L * L_correct_mask  # N x K
 
-            c_k_tile = repeat(m_k, 'n -> n tile', tile=c_k.shape[-1])
+            patch_correct_mask = repeat(correct_c, 'n -> n dim', dim=self.dim)
             
             # Features masked by whether they are correctly clustered
-            c_q = c_k * c_k_tile  # n x embedding_dim
+            patches_c_correct = patches_c * patch_correct_mask  # n x embedding_dim
 
-            f = m_q.transpose(0, 1) @ c_q  # self.num_prototype x embedding_dim
+            f = L_correct.transpose(0, 1) @ patches_c_correct  # K x dim
 
-            n = torch.sum(m_q, dim=0) # shape: [,self.num_prototype]
+            n = torch.sum(L_correct, dim=0) # shape: [,self.num_prototype]
 
             if torch.sum(n) > 0 and self.update_prototype is True:
                 f = F.normalize(f, p=2, dim=-1)
 
-                new_value = momentum_update(old_value=protos[k, n != 0, :], new_value=f[n != 0, :],
+                new_value = momentum_update(old_value=protos[c, n != 0, :], new_value=f[n != 0, :],
                                             momentum=self.gamma, debug=False)
-                protos[k, n != 0, :] = new_value
+                protos[c, n != 0, :] = new_value
 
-            proto_target[gt_seg == k] = indexs.float() + (self.num_prototype * k)
+            proto_target[pseudo_gt == c] = indexs.float() + (self.num_prototype * c)
             
             if debug:
-                q_dict[k] = q.detach()
+                q_dict[c] = L.detach()
 
         self.prototypes = l2_normalize(protos).detach().clone()
         return proto_logits, proto_target, q_dict
 
-    def get_pseudo_gt(self, batch_patch_tokens: torch.Tensor, batch_labels: torch.Tensor):
-        B, HW, C = batch_patch_tokens.shape
+    def get_pseudo_gt(self, patch_tokens: torch.Tensor, labels: torch.Tensor):
+        B, HW, C = patch_tokens.shape
         H = W = int(sqrt(HW))
-        U,_, _ = torch.pca_lowrank(batch_patch_tokens.reshape(-1, self.backbone_dim),
-                                   q=1, center=True, niter=10)
+        U,_, _ = torch.pca_lowrank(patch_tokens.reshape(-1, self.backbone_dim),
+                                   L=1, center=True, niter=10)
         U_scaled = (U - U.min()) / (U.max() - U.min()).squeeze()
         U_scaled = U_scaled.reshape(B, H, W)
         
         pseudo_gt = torch.where(U_scaled < self.pseudo_gt_threshold,
-                                repeat(batch_labels, "b -> b H W", H=H, W=W),
+                                repeat(labels, "b -> b H W", H=H, W=W),
                                 self.num_classes - 1)
         
         return pseudo_gt
@@ -131,17 +134,17 @@ class ProtoNet(nn.Module):
 
         self.prototypes.data.copy_(l2_normalize(self.prototypes))
 
-        # N: b*h*w, C: num_class, K: num_prototype
-        logits = torch.einsum('ND,CKD->NKC', patches, self.prototypes)
+        # N: B*H*W, C: num_class, c: num_prototype
+        patch_prototype_logits = torch.einsum('ND,CKD->NKC', patches, self.prototypes)
 
-        patch_class_assignments = torch.amax(logits, dim=1)
-        patch_class_assignments = self.class_norm(patch_class_assignments)
-        patch_class_assignments = rearrange(patch_class_assignments, "(B H W) C -> B C H W", B=B, H=H, W=W)
+        patch_class_logits = torch.amax(patch_prototype_logits, dim=1)
+        patch_class_logits = self.class_norm(patch_class_logits)
+        patch_class_logits = rearrange(patch_class_logits, "(B H W) C -> B C H W", B=B, H=H, W=W)
 
         if labels is not None:
-            gt_seg = pseudo_gt.reshape(-1)
-            contrast_logits, contrast_target, q_dict = self.update_prototypes(patches, patch_class_assignments, gt_seg, logits, debug=debug)
-            return {'seg': patch_class_assignments, 'logits': contrast_logits, "prototype_logits": logits,
+            pseudo_gt = pseudo_gt.reshape(-1)
+            contrast_logits, contrast_target, q_dict = self.update_prototypes(patches, patch_class_logits, pseudo_gt.reshape(-1), patch_prototype_logits, debug=debug)
+            return {'seg': patch_class_logits, 'patch_prototype_logits': contrast_logits, "prototype_logits": patch_prototype_logits,
                     'target': contrast_target, "pseudo_gt": pseudo_gt, "q_dict": q_dict}
 
-        return {"class_logits": patch_class_assignments, "prototype_logits": logits}
+        return {"class_logits": patch_class_logits, "prototype_logits": patch_prototype_logits}
