@@ -142,7 +142,6 @@ class ProtoNet(nn.Module):
         patch_class_logits = rearrange(patch_class_logits, "(B H W) C -> B C H W", B=B, H=H, W=W)
 
         if labels is not None:
-            pseudo_gt = pseudo_gt.reshape(-1)
             contrast_logits, contrast_target, q_dict = self.update_prototypes(patches, patch_class_logits, pseudo_gt.reshape(-1), patch_prototype_logits, debug=debug)
             return {'seg': patch_class_logits, 'patch_prototype_logits': contrast_logits, "prototype_logits": patch_prototype_logits,
                     'target': contrast_target, "pseudo_gt": pseudo_gt, "q_dict": q_dict}
