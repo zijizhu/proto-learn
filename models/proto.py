@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from einops import repeat, rearrange
+from einops import repeat, rearrange, einsum
 from math import sqrt
 from collections import defaultdict
 
@@ -32,11 +32,11 @@ class ProtoNet(nn.Module):
         self.register_buffer("prototypes", torch.zeros(self.num_classes, self.num_prototype, in_channels))
 
         self.feat_norm = nn.LayerNorm(in_channels)
-        self.mask_norm = nn.LayerNorm(self.num_classes)
+        self.class_norm = nn.LayerNorm(self.num_classes)
 
         trunc_normal_(self.prototypes, std=0.02)
 
-    def prototype_learning(self, _c, out_seg, gt_seg, masks, debug=False):
+    def update_prototypes(self, _c, out_seg, gt_seg, masks, debug=False):
         """
         _c: l2-normalized features of the whole batch, shape: [(b*h*w), d]
         out_seg: batch segmentation class logits, shape: [b, k, h, w]
@@ -115,34 +115,33 @@ class ProtoNet(nn.Module):
         
         return pseudo_gt
 
-    def forward(self, x_, gt=None, pretrain_prototype=False, debug=False):
-        feature_dict = self.backbone.forward_features(x_)
+    def forward(self, x: torch.Tensor, label: torch.Tensor | None = None, debug: bool = False):
+        feature_dict = self.backbone.forward_features(x)
         patch_tokens = feature_dict["x_norm_patchtokens"]
-        if gt is not None:
-            pseudo_gt = self.get_pseudo_gt(patch_tokens.detach(), gt)
+        if label is not None:
+            pseudo_gt = self.get_pseudo_gt(patch_tokens.detach(), label)
         f = self.proj(patch_tokens)
 
-        b, hw, c = f.shape
-        h = w = int(sqrt(hw))
+        B, HW, _ = f.shape
+        H = W = int(sqrt(HW))
 
-        _c = rearrange(f, 'b hw c -> (b hw) c')
-        _c = self.feat_norm(_c)
-        _c = l2_normalize(_c)
+        patches = rearrange(f, 'B HW dim -> (B HW) dim')
+        patches = self.feat_norm(patches)
+        patches = l2_normalize(patches)
 
         self.prototypes.data.copy_(l2_normalize(self.prototypes))
 
-        # n: b*h*w, k: num_class, m: num_prototype
-        masks = torch.einsum('nd,kmd->nmk', _c, self.prototypes)
+        # N: b*h*w, C: num_class, K: num_prototype
+        logits = torch.einsum('ND,CKD->NKC', patches, self.prototypes)
 
-        out_seg = torch.amax(masks, dim=1)
-        out_seg = self.mask_norm(out_seg)
-        out_seg = rearrange(out_seg, "(b h w) k -> b k h w", b=b, h=h, w =w)
+        patch_class_assignments = torch.amax(logits, dim=1)
+        patch_class_assignments = self.class_norm(patch_class_assignments)
+        patch_class_assignments = rearrange(patch_class_assignments, "(B H W) C -> B C H W", B=B, H=H, W=W)
 
-        if pretrain_prototype is False and self.use_prototype is True and gt is not None:
+        if label is not None:
             gt_seg = pseudo_gt.reshape(-1)
-            # gt_seg = F.interpolate(gt_semantic_seg.float(), size=(h, w), mode='nearest').view(-1)
-            contrast_logits, contrast_target, q_dict = self.prototype_learning(_c, out_seg, gt_seg, masks, debug=debug)
-            return {'seg': out_seg, 'logits': contrast_logits, "prototype_logits": masks,
+            contrast_logits, contrast_target, q_dict = self.update_prototypes(patches, patch_class_assignments, gt_seg, logits, debug=debug)
+            return {'seg': patch_class_assignments, 'logits': contrast_logits, "prototype_logits": logits,
                     'target': contrast_target, "pseudo_gt": pseudo_gt, "q_dict": q_dict}
 
-        return {"class_logits": out_seg, "prototype_logits": masks}
+        return {"class_logits": patch_class_assignments, "prototype_logits": logits}
