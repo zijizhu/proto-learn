@@ -108,7 +108,7 @@ class ProtoNet(nn.Module):
         B, HW, C = patch_tokens.shape
         H = W = int(sqrt(HW))
         U,_, _ = torch.pca_lowrank(patch_tokens.reshape(-1, self.backbone_dim),
-                                   L=1, center=True, niter=10)
+                                   q=1, center=True, niter=10)
         U_scaled = (U - U.min()) / (U.max() - U.min()).squeeze()
         U_scaled = U_scaled.reshape(B, H, W)
         
