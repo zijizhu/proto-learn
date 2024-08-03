@@ -18,7 +18,7 @@ class ProtoNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.gamma = 0.999
-        self.num_prototype = 10
+        self.num_prototype = 5
         self.use_prototype = True
         self.update_prototype = True
         self.pretrain_prototype = False
@@ -27,8 +27,8 @@ class ProtoNet(nn.Module):
         self.backbone = torch.hub.load('facebookresearch/dinov2', "dinov2_vitb14_reg")
 
         self.backbone_dim = 768
-        in_channels = 512
-        self.proj = nn.Linear(768, 512)
+        in_channels = 256
+        self.proj = nn.Linear(self.backbone_dim, in_channels)
         self.register_buffer("prototypes", torch.zeros(self.num_classes, self.num_prototype, in_channels))
 
         self.feat_norm = nn.LayerNorm(in_channels)
@@ -142,7 +142,7 @@ class ProtoNet(nn.Module):
             gt_seg = pseudo_gt.reshape(-1)
             # gt_seg = F.interpolate(gt_semantic_seg.float(), size=(h, w), mode='nearest').view(-1)
             contrast_logits, contrast_target, q_dict = self.prototype_learning(_c, out_seg, gt_seg, masks, debug=debug)
-            return {'seg': out_seg, 'logits': contrast_logits,
+            return {'seg': out_seg, 'logits': contrast_logits, "prototype_logits": masks,
                     'target': contrast_target, "pseudo_gt": pseudo_gt, "q_dict": q_dict}
 
         return {"class_logits": out_seg, "prototype_logits": masks}
