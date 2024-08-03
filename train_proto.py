@@ -39,7 +39,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
         batch = tuple(item.to(device) for item in batch)
         images, labels, _ = batch
         outputs = model(images,
-                        gt=labels,
+                        labels=labels,
                         debug=debug)
         clf_logits = outputs["seg"].sum((-1, -2,))[:, :-1]
         if debug:

@@ -115,11 +115,11 @@ class ProtoNet(nn.Module):
         
         return pseudo_gt
 
-    def forward(self, x: torch.Tensor, label: torch.Tensor | None = None, debug: bool = False):
+    def forward(self, x: torch.Tensor, labels: torch.Tensor | None = None, debug: bool = False):
         feature_dict = self.backbone.forward_features(x)
         patch_tokens = feature_dict["x_norm_patchtokens"]
-        if label is not None:
-            pseudo_gt = self.get_pseudo_gt(patch_tokens.detach(), label)
+        if labels is not None:
+            pseudo_gt = self.get_pseudo_gt(patch_tokens.detach(), labels)
         f = self.proj(patch_tokens)
 
         B, HW, _ = f.shape
@@ -138,7 +138,7 @@ class ProtoNet(nn.Module):
         patch_class_assignments = self.class_norm(patch_class_assignments)
         patch_class_assignments = rearrange(patch_class_assignments, "(B H W) C -> B C H W", B=B, H=H, W=W)
 
-        if label is not None:
+        if labels is not None:
             gt_seg = pseudo_gt.reshape(-1)
             contrast_logits, contrast_target, q_dict = self.update_prototypes(patches, patch_class_assignments, gt_seg, logits, debug=debug)
             return {'seg': patch_class_assignments, 'logits': contrast_logits, "prototype_logits": logits,
