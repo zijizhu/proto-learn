@@ -50,7 +50,7 @@ class ProtoNet(nn.Module):
         # flat bool arrary indicate if prediction in batch is correct, shape: [(B*H*W),]
         correct = (pseudo_gt == preds.view(-1))
 
-        # cosine similarity of l2 normalized batch features and prototypes shape: [(B*H*W), (C*c)]
+        # cosine similarity of l2 normalized batch features and prototypes shape: [(B*H*W), (C*K)]
         cosine_similarity = torch.mm(patches, self.prototypes.view(-1, self.dim).t())
 
         proto_logits = cosine_similarity  # shape: shape: [(B*H*W), (c*m)]
@@ -64,12 +64,12 @@ class ProtoNet(nn.Module):
         else:
             q_dict = None
         for c in range(self.num_classes):
-            init_q = masks[..., c]  # shape: [(B*H*W), m]
-            init_q = init_q[pseudo_gt == c, ...]  # shape: [n, m]
-            if init_q.shape[0] == 0:
+            L_init = masks[..., c]  # shape: [(B*H*W), K]
+            L_init = L_init[pseudo_gt == c, ...]  # shape: [N, K]
+            if L_init.shape[0] == 0:
                 continue
 
-            L, indexs = distributed_sinkhorn(init_q)
+            L, indexs = distributed_sinkhorn(L_init)
 
             correct_c = correct[pseudo_gt == c]  # shape: [n,], dtype: bool
 
@@ -142,7 +142,11 @@ class ProtoNet(nn.Module):
         patch_class_logits = rearrange(patch_class_logits, "(B H W) C -> B C H W", B=B, H=H, W=W)
 
         if labels is not None:
-            contrast_logits, contrast_target, q_dict = self.update_prototypes(patches, patch_class_logits, pseudo_gt.reshape(-1), patch_prototype_logits, debug=debug)
+            contrast_logits, contrast_target, q_dict = self.update_prototypes(patches,
+                                                                              patch_class_logits,
+                                                                              pseudo_gt.reshape(-1),
+                                                                              patch_prototype_logits,
+                                                                              debug=debug)
             return {'seg': patch_class_logits, 'logits': contrast_logits, "prototype_logits": patch_prototype_logits,
                     'target': contrast_target, "pseudo_gt": pseudo_gt, "q_dict": q_dict}
 
