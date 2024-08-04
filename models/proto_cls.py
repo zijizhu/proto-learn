@@ -150,6 +150,7 @@ class ProtoNetCLS(nn.Module):
 
         # N: B*H*W, C: num_class, c: num_prototype
         patch_prototype_logits = torch.einsum('ND,CKD->NCK', patches, self.prototypes)  # range: [0, 1]
+        patch_class_logits = patch_prototype_logits.amax(dim=-1)  # shape: [N, C]
         
         patch_prototype_logits = rearrange(patch_prototype_logits, "(B H W) C K -> B (C K) H W", B=B, H=H, W=W)
         image_prototype_logits = self.max_pool(patch_prototype_logits).squeeze()  # type: torch.Tensor  # shape: [B, C*K,]
@@ -160,7 +161,7 @@ class ProtoNetCLS(nn.Module):
         if labels is not None:
             contrast_logits, contrast_target, L_dict, n_dict, n_final_dict = self.update_prototypes(
                 patches,
-                patch_prototype_logits.amax(dim=-1),
+                patch_class_logits,
                 pseudo_fg_mask.reshape(-1),
                 patch_prototype_logits,
                 debug=debug
