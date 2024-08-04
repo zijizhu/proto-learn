@@ -19,6 +19,7 @@ class ProtoNetCLS(nn.Module):
 
     def __init__(self):
         super().__init__()
+        self.topk = 4
         self.gamma = 0.999
         self.num_prototype = 5
         self.use_prototype = True
@@ -36,13 +37,14 @@ class ProtoNetCLS(nn.Module):
         self.feat_norm = nn.LayerNorm(self.dim)
         self.class_norm = nn.LayerNorm(self.num_classes)
         
-        self.max_pool = nn.AdaptiveAvgPool2d(output_size=(1, 1,))
-        fc = torch.eye(self.num_classes, dtype=torch.float32).repeat_interleave(self.num_prototype, dim=0)
-        self.register_buffer("fc", fc)
+        self.max_pool = nn.AdaptiveMaxPool2d(output_size=(1, 1,))
+        associations = torch.eye(self.num_classes, dtype=torch.float32).repeat_interleave(self.num_prototype, dim=0)
+        self.register_buffer("associations", associations)
+        self.register_buffer("fc", 1 * associations - 0.5 * (1 - associations))
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
 
-    def update_prototypes(self, patches, patch_class_logits, pseudo_fg_mask, patch_prototype_logits, topk=1, debug=False):
+    def update_prototypes(self, patches, patch_class_logits, pseudo_fg_mask, patch_prototype_logits, debug=False):
         """
         patches: l2-normalized features of the whole batch, shape: [(B*H*W), dim]
         patch_class_logits: batch class logits for each patch, shape: [B, C, H, W]
@@ -83,10 +85,11 @@ class ProtoNetCLS(nn.Module):
 
             # Pixel-prototype assignement matrix masked by if they are correctly predicted
             L_correct = L * L_correct_mask  # N x K
-            cos_L_correct = cos[:, c, :] * L_correct
-            _, topk_patch_indices = cos_L_correct.topk(k=1, dim=0)
+
+            cos_L_correct = cos[pseudo_fg_mask == c, c, :] * L_correct
+            _, topk_patch_indices = cos_L_correct.topk(k=self.topk, dim=0)
             final_assignment = torch.zeros_like(cos_L_correct, dtype=torch.float32)
-            final_assignment[topk_patch_indices, range(self.num_prototype)] = 1.
+            final_assignment[topk_patch_indices, torch.arange(self.num_prototype).repeat(self.topk, 1)] = 1.
 
             patches_prototype_logits = repeat(correct_c, 'n -> n dim', dim=self.dim)
             
@@ -167,7 +170,7 @@ class ProtoNetCLS(nn.Module):
                 debug=debug
             )
             return dict(
-                pred_logits=pred_logits,
+                pred_logits=pred_logits[:, :-1],
                 patch_prototype_logits=patch_prototype_logits_reshaped,
                 image_prototype_logits=image_prototype_logits,
                 contrast_logits=contrast_logits,
@@ -179,7 +182,7 @@ class ProtoNetCLS(nn.Module):
                 n_final_dict=n_final_dict
             )
         return dict(
-                pred_logits=pred_logits,
+                pred_logits=pred_logits[:, :-1],
                 patch_prototype_logits=patch_prototype_logits_reshaped
             )
 
@@ -190,7 +193,7 @@ class Loss(nn.Module):
         
         self.xe_coef = 1.
         self.clst_coef = 0.8
-        self.sep_coef = 0.08
+        self.sep_coef = -0.08
         self.contrast_coef = 0.01
         
         self.xe = nn.CrossEntropyLoss()
@@ -200,7 +203,7 @@ class Loss(nn.Module):
         xe = self.xe(outputs["pred_logits"], labels)
         loss_dict["xe"] = self.xe_coef * xe
         
-        if self.clst_coef > 0 and self.sep_coef > 0 and outputs.get("image_prototype_logits", None):
+        if self.clst_coef != 0 and self.sep_coef != 0 and outputs.get("image_prototype_logits", None) is not None:
             similarities = outputs["image_prototype_logits"]
             gt_proto_mask = proto_class_association[:, labels].T
             gt_proto_inverted_dists, _ = torch.max(similarities * gt_proto_mask, dim=1)

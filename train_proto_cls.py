@@ -35,9 +35,8 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
         batch = tuple(item.to(device) for item in batch)
         images, labels, _ = batch
         outputs = model(images, labels=labels)
-        clf_logits = outputs["seg"].sum((-1, -2,))[:, :-1]
 
-        loss_dict = criterion(outputs, labels, model.fc)
+        loss_dict = criterion(outputs, labels, model.associations)
         total_loss = sum(v for v in loss_dict.values())
 
         # total_loss = sum(v for k, v in loss_dict.items() if not k.startswith("_"))
@@ -48,7 +47,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
         for k, v in loss_dict.items():
             running_losses[k] += v.item() * dataloader.batch_size
 
-        mca_train(clf_logits, labels)
+        mca_train(outputs["pred_logits"], labels)
 
     for k, v in running_losses.items():
         loss_avg = v / len(dataloader.dataset)
@@ -73,9 +72,9 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int,
             batch = tuple(item.to(device) for item in batch)
             images, labels, _ = batch
             outputs = model(images)
-            clf_logits = outputs["class_logits"].sum((-1, -2,))[:, :-1]
+            # clf_logits = outputs["class_logits"].sum((-1, -2,))[:, :-1]
 
-            mca_val(clf_logits, labels)
+            mca_val(outputs["pred_logits"], labels)
 
     epoch_acc_val = mca_val.compute().item()
     logger.info(f"EPOCH {epoch} {epoch_name} val acc: {epoch_acc_val:.4f}")
