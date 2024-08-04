@@ -152,8 +152,8 @@ class ProtoNetCLS(nn.Module):
         patch_prototype_logits = torch.einsum('ND,CKD->NCK', patches, self.prototypes)  # range: [0, 1]
         patch_class_logits = patch_prototype_logits.amax(dim=-1)  # shape: [N, C]
         
-        patch_prototype_logits = rearrange(patch_prototype_logits, "(B H W) C K -> B (C K) H W", B=B, H=H, W=W)
-        image_prototype_logits = self.max_pool(patch_prototype_logits).squeeze()  # type: torch.Tensor  # shape: [B, C*K,]
+        patch_prototype_logits_reshaped = rearrange(patch_prototype_logits, "(B H W) C K -> B (C K) H W", B=B, H=H, W=W)
+        image_prototype_logits = self.max_pool(patch_prototype_logits_reshaped).squeeze()  # type: torch.Tensor  # shape: [B, C*K,]
         
         pred_logits = image_prototype_logits @ self.fc
         
@@ -168,7 +168,7 @@ class ProtoNetCLS(nn.Module):
             )
             return dict(
                 pred_logits=pred_logits,
-                patch_prototype_logits=patch_prototype_logits,
+                patch_prototype_logits=patch_prototype_logits_reshaped,
                 image_prototype_logits=image_prototype_logits,
                 contrast_logits=contrast_logits,
                 contrast_target=contrast_target,
@@ -180,7 +180,7 @@ class ProtoNetCLS(nn.Module):
             )
         return dict(
                 pred_logits=pred_logits,
-                patch_prototype_logits=patch_prototype_logits
+                patch_prototype_logits=patch_prototype_logits_reshaped
             )
 
 
