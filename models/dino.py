@@ -33,9 +33,9 @@ class ProtoDINO(nn.Module):
                           patch_tokens: torch.Tensor,
                           patch_prototype_logits: torch.Tensor,
                           labels: torch.Tensor,
-                          batch_fg_mask: torch.Tensor,
+                          patch_labels: torch.Tensor,
                           debug: bool = False):
-        batch_fg_mask_flat = batch_fg_mask.flatten()
+        patch_labels_flat = patch_labels.flatten()
         patches_flat = rearrange(patch_tokens, "B n_patches dim -> (B n_patches) dim")
         L = rearrange(patch_prototype_logits, "B n_patches C K -> (B n_patches) C K")
         
@@ -43,21 +43,22 @@ class ProtoDINO(nn.Module):
         
         debug_dict = defaultdict(dict) if debug else None
 
-        for c in self.n_classes:
+        for c in range(self.n_classes):
             if c not in labels:
                 continue
             
-            class_fg_mask = batch_fg_mask_flat == c
+            class_fg_mask = patch_labels_flat == c
             I_c = patches_flat[class_fg_mask]  # shape: [N, dim]
             L_c = L[class_fg_mask, c, :]  # shape: [N, K,]
             
-            L_c_assignment = sinkhorn_knopp(L_c)  # shape: [N, K,]
+            L_c_assignment, _ = sinkhorn_knopp(L_c)  # shape: [N, K,]
             
             P_c_new = torch.mm(L_c_assignment.t(), I_c)  # shape: [K, dim]
             
-            P_c_old = P_old[:, c, :]
+            P_c_old = P_old[c, :, :]
             
-            self.prototypes[c, ...] = momentum_update(P_c_old, P_c_new, momentum=self.gamma)
+            if self.training:
+                self.prototypes[c, ...] = momentum_update(P_c_old, P_c_new, momentum=self.gamma)
             
             if debug:
                 debug_dict["L_c"][c] = L_c
@@ -69,37 +70,36 @@ class ProtoDINO(nn.Module):
         return None
                 
 
-    def get_pseudo_fg_mask(self, patch_tokens: torch.Tensor, labels: torch.Tensor):
+    def get_pseudo_patch_labels(self, patch_tokens: torch.Tensor, labels: torch.Tensor):
         B, n_patches, dim = patch_tokens.shape
         H = W = int(sqrt(n_patches))
         U, _, _ = torch.pca_lowrank(patch_tokens.reshape(-1, self.dim),
-                                   q=1, center=True, niter=10)
+                                    q=1, center=True, niter=10)
         U_scaled = (U - U.min()) / (U.max() - U.min()).squeeze()
         U_scaled = U_scaled.reshape(B, H, W)
         
-        pseudo_fg_mask = torch.where(U_scaled < self.pca_fg_threshold,
-                                     repeat(labels, "B -> B H W", H=H, W=W),
-                                     self.num_classes - 1)
+        pseudo_patch_labels = torch.where(U_scaled < self.pca_fg_threshold,
+                                          repeat(labels, "B -> B H W", H=H, W=W),
+                                          self.n_classes - 1)
         
-        return pseudo_fg_mask.to(dtype=torch.long)  # shape: [B, H, W,]
+        return pseudo_patch_labels.to(dtype=torch.long)  # shape: [B, H, W,]
 
     def forward(self, x: torch.Tensor, labels: torch.Tensor | None = None, debug: bool = False):
         patch_tokens = self.backbone.forward_features(x)["x_norm_patchtokens"]  # shape: [B, n_pathes, dim,]
-
-        fg_mask = self.get_pseudo_fg_mask(patch_tokens, labels=labels)
 
         patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
         prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
         patch_prototype_logits = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
         
-        if labels:
+        if labels is not None:
+            pseudo_patch_labels = self.get_pseudo_patch_labels(patch_tokens, labels=labels)
             debug_dict = self.update_prototypes(patch_tokens=patch_tokens_norm,
                                                 patch_prototype_logits=patch_prototype_logits,
                                                 labels=labels,
-                                                batch_fg_mask=fg_mask,
+                                                patch_labels=pseudo_patch_labels,
                                                 debug=debug)
         
-        image_prototype_logits = patch_prototype_logits.max(1)  # shape: [B, C, K,]
+        image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,]
         class_logits = image_prototype_logits.sum(-1)  # shape: [B, C,]
 
         outputs =  dict(
@@ -108,9 +108,8 @@ class ProtoDINO(nn.Module):
             class_logits=class_logits
         )
 
-        if debug:
+        if debug and labels is not None:
+            debug_dict["pseudo_patch_labels"] = pseudo_patch_labels
             outputs.update(debug_dict)
 
         return outputs
-        
-        
