@@ -87,7 +87,7 @@ def visualize_top_prototypes(axes,
     im_transformed = transforms(im_raw).unsqueeze(0).to(device)
     
     outputs = net(im_transformed)
-    outputs = tuple(item.detach().cpu().squeeze() for item in outputs)
+    outputs = {k: v.detach().cpu().squeeze() for k, v in outputs.items()}
     min_dists, full_l2_dists = outputs["min_dists"], outputs["l2_dists"]
 
     topk_negative_dists, topk_proto_indices = torch.topk(-min_dists, k=5)

@@ -17,16 +17,15 @@ def l2_normalize(x):
     return F.normalize(x, p=2, dim=-1)
 
 
-def distributed_sinkhorn(out, sinkhorn_iterations=3, epsilon=0.05):
-    L = torch.exp(out / epsilon).t() # K x B
-    B = L.shape[1]
-    K = L.shape[0]
+def sinkhorn_knopp(out, n_iterations=3, epsilon=0.05, use_gumbel=False):
+    L = torch.exp(out / epsilon).t()  # shape: [K, B,]
+    K, B = L.shape
 
     # make the matrix sums to 1
     sum_L = torch.sum(L)
     L /= sum_L
 
-    for _ in range(sinkhorn_iterations):
+    for _ in range(n_iterations):
         L /= torch.sum(L, dim=1, keepdim=True)
         L /= K
 
@@ -36,11 +35,13 @@ def distributed_sinkhorn(out, sinkhorn_iterations=3, epsilon=0.05):
     L *= B
     L = L.t()
 
-    indexs = torch.argmax(L, dim=1)
-    # L = torch.nn.functional.one_hot(indexs, num_classes=L.shape[1]).float()
-    L = F.gumbel_softmax(L, tau=0.5, hard=True)
-
-    return L, indexs
+    indices = torch.argmax(L, dim=1)
+    if use_gumbel:
+        L = F.gumbel_softmax(L, tau=0.5, hard=True)
+    else:
+        L = F.one_hot(indices, num_classes=K).to(dtype=torch.float32)
+        
+    return L, indices
 
 
 class PPC(nn.Module, ABC):

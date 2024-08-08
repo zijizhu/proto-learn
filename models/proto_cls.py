@@ -6,7 +6,7 @@ from einops import rearrange, repeat
 from torch import nn
 
 from models.utils import (
-    distributed_sinkhorn,
+    sinkhorn_knopp,
     l2_normalize,
     momentum_update,
 )
@@ -75,7 +75,7 @@ class ProtoNetCLS(nn.Module):
             if L_init.shape[0] == 0:
                 continue
 
-            L, prototype_indices = distributed_sinkhorn(L_init)
+            L, prototype_indices = sinkhorn_knopp(L_init)
 
             correct_c = correct[pseudo_fg_mask == c]  # shape: [n,], dtype: bool
 
@@ -130,8 +130,8 @@ class ProtoNetCLS(nn.Module):
         U_scaled = U_scaled.reshape(B, H, W)
         
         pseudo_fg_mask = torch.where(U_scaled < self.pseudo_fg_mask_threshold,
-                                repeat(labels, "b -> b H W", H=H, W=W),
-                                self.num_classes - 1)
+                                     repeat(labels, "b -> b H W", H=H, W=W),
+                                     self.num_classes - 1)
         
         return pseudo_fg_mask
 
