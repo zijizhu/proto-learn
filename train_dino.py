@@ -14,7 +14,7 @@ import torchvision.transforms as T
 import torchvision.transforms.functional as F
 from einops import rearrange
 from PIL import Image
-from torch import nn, optim
+from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.classification import MulticlassAccuracy
@@ -42,6 +42,7 @@ def overlay_attn_map(attn_map: np.ndarray, im: Image.Image):
 def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
                               batch_im_paths: list[str],
                               writer: SummaryWriter,
+                              epoch: int,
                               *,
                               topk: int = 5,
                               input_size: int = 224,
@@ -84,66 +85,92 @@ def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
         plt.close(fig=fig)
         
         figures.append(fig_image)
-        writer.add_image(f"{class_name}/{fname} top {topk} prototypes", F.pil_to_tensor(fig_image))
+    
+    for fig in figures:
+        writer.add_image(f"Epoch {epoch} top {topk} prototypes/", F.pil_to_tensor(fig_image))
 
     return figures
 
 
-def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion: nn.Module,
-                optimizer: optim.Optimizer,
-                logger: Logger, device: torch.device, epoch_name: str = "joint"):
+def visualize_prototype_assignments(outputs: dict[str, torch.Tensor],
+                                    labels: torch.Tensor, writer: SummaryWriter, epoch: int):
+    patch_labels = outputs["pseudo_patch_labels"].clone()  # shape: [B, H, W,]
+    L_c_dict = {c: L_c.detach().clone() for c, L_c in outputs["L_c_assignment"].items()}
+
+    fig, axes = plt.subplots(10, 10, figsize=(10, 10,))
+
+    for b, (c, ax) in enumerate(zip(labels.cpu().tolist(), axes.flat)):
+        patch_labels_b = patch_labels[b, :, :]  # shape: [H, W,], dtype: torch.long
+        fg_mask_b = patch_labels_b != 200  # shape: [H, W,], dtype: bool
+
+        num_foreground_pixels = fg_mask_b.sum().cpu().item()
+
+        L_c_i = L_c_dict[c][:num_foreground_pixels]
+        L_c_dict[c] = L_c_dict[c][num_foreground_pixels:]
+        L_c_i_argmax = L_c_i.argmax(-1)  # shape: [N,]
+
+        assignment_map = torch.empty_like(fg_mask_b, dtype=torch.long)
+        assignment_map[fg_mask_b] = L_c_i_argmax
+        assignment_map[~fg_mask_b] = -1
+
+        ax.imshow((assignment_map + 1).squeeze().cpu().numpy(), cmap="tab10")
+        ax.set_xticks([]), ax.set_yticks([])
+    
+    fig.tight_layout()
+    fig.canvas.draw()
+    fig_image = Image.frombuffer('RGBa', fig.canvas.get_width_height(), fig.canvas.buffer_rgba()).convert("RGB")
+    plt.close(fig=fig)
+    
+    writer.add_image("Batch prototype assignment", F.pil_to_tensor(fig_image), global_step=epoch)
+    
+    return fig_image
+
+
+def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: SummaryWriter,
+                logger: Logger, device: torch.device, debug: bool = False):
 
     model.train()
     running_losses = defaultdict(float)
     mca_train = MulticlassAccuracy(num_classes=len(dataloader.dataset.classes), average="micro").to(device)
 
 
-    for batch in tqdm(dataloader):
+    for i, batch in enumerate(tqdm(dataloader)):
         batch = tuple(item.to(device) for item in batch)
-        images, labels, _ = batch
-        outputs = model(images, labels=labels)
+        images, labels, _, sample_indices = batch
+        outputs = model(images, labels=labels, use_gumbel=True)
 
-        # loss_dict = criterion(outputs, labels, model.associations)
-        # total_loss = sum(v for v in loss_dict.values())
-
-        # total_loss = sum(v for k, v in loss_dict.items() if not k.startswith("_"))
-        # total_loss.backward()
-        # optimizer.step()
-        # optimizer.zero_grad()
-
-        # for k, v in loss_dict.items():
-        #     running_losses[k] += v.item() * dataloader.batch_size
         mca_train(outputs["class_logits"][:, :-1], labels)
+        
+        if debug and i == 0:
+            batch_im_paths = [dataloader.dataset.samples[idx] for idx in sample_indices.tolist()]
+            visualize_topk_prototypes(outputs, batch_im_paths, writer, epoch)
+            visualize_prototype_assignments(outputs, labels, writer, epoch)
 
     for k, v in running_losses.items():
         loss_avg = v / len(dataloader.dataset)
         # summary_writer.add_scalar(f"Loss/{k}", loss_avg, epoch)
-        logger.info(f"EPOCH {epoch} {epoch_name} train {k}: {loss_avg:.4f}")
+        logger.info(f"EPOCH {epoch} train {k}: {loss_avg:.4f}")
 
     epoch_acc_train = mca_train.compute().item()
     # summary_writer.add_scalar("Acc/train", epoch_acc_train, epoch)
-    logger.info(f"EPOCH {epoch} {epoch_name} train acc: {epoch_acc_train:.4f}")
-    
-    # if epoch in [5, 10, 15]:
-    #     torch.save({k: v.cpu() for k, v in model.state_dict().items()}, f"dino_v2_epoch{epoch}.pth")
+    logger.info(f"EPOCH {epoch} train acc: {epoch_acc_train:.4f}")
 
 
 @torch.inference_mode()
 def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int,
-              logger: Logger, device: torch.device, epoch_name: str = "joint"):
+              logger: Logger, device: torch.device,):
     model.eval()
     mca_val = MulticlassAccuracy(num_classes=len(dataloader.dataset.classes), average="micro").to(device)
-    with torch.no_grad():
-        for batch in tqdm(dataloader):
-            batch = tuple(item.to(device) for item in batch)
-            images, labels, _ = batch
-            outputs = model(images)
-            # clf_logits = outputs["class_logits"].sum((-1, -2,))[:, :-1]
 
-            mca_val(outputs["class_logits"][:, :-1], labels)
+    for batch in tqdm(dataloader):
+        batch = tuple(item.to(device) for item in batch)
+        images, labels, _ = batch
+        outputs = model(images)
+
+        mca_val(outputs["class_logits"][:, :-1], labels)
 
     epoch_acc_val = mca_val.compute().item()
-    logger.info(f"EPOCH {epoch} {epoch_name} val acc: {epoch_acc_val:.4f}")
+    logger.info(f"EPOCH {epoch} val acc: {epoch_acc_val:.4f}")
     
     return epoch_acc_val
 
@@ -151,14 +178,15 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int,
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    log_dir = Path("tmp.log")
+    log_dir = Path("tmp")
+    log_dir.mkdir(exist_ok=True)
 
     logging.basicConfig(
         level=logging.INFO,
         format="[%(asctime)s][%(name)s][%(levelname)s] - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[
-            logging.FileHandler(log_dir.as_posix()),
+            logging.FileHandler((log_dir / "train.log").as_posix()),
             logging.StreamHandler(sys.stdout),
         ],
         force=True,
@@ -167,15 +195,13 @@ def main():
 
     L.seed_everything(42)
 
-    # Construct augmentations
     normalize = T.Normalize(mean=(0.485, 0.456, 0.406,), std=(0.229, 0.224, 0.225,))
     transforms = T.Compose([
         T.Resize((224, 224,)),
         T.ToTensor(),
         normalize
     ])
-    
-    # Load datasets and dataloaders
+
     dataset_dir = Path("datasets") / "cub200_cropped"
     attribute_labels_path = Path("datasets") / "class_attribute_labels_continuous.txt"
     training_set_path = "train_cropped"
@@ -185,47 +211,27 @@ def main():
     dataset_test = CUBDataset((dataset_dir / "test_cropped").as_posix(),
                               attribute_labels_path.as_posix(),
                               transforms=transforms)
-    # dataset_projection = CUBDataset((dataset_dir / "train_cropped").as_posix(),
-    #                                 attribute_labels_path.as_posix(),
-    #                                 transforms=transforms)
+
     dataloader_train = DataLoader(dataset=dataset_train, batch_size=80, num_workers=8, shuffle=True)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=100, num_workers=8, shuffle=False)
-    # dataloader_projection = DataLoader(dataset=dataset_projection, batch_size=75, num_workers=8, shuffle=False)
 
     net = ProtoDINO()
-
-    # Load optimizers
-    # joint_param_groups = [
-    #     {'params': net.proj.parameters(),
-    #      'lr': 0.01,
-    #      'weight_decay': 0.0001},
-    # ]
     for params in net.backbone.parameters():
         params.requires_grad = False
-    
-    # optimizer = optim.Adam(joint_param_groups)
-    # lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
-
-    # Prepare for training
-    # writer = SummaryWriter(log_dir=log_dir.as_posix())
     net.to(device)
-    # criterion.to(device)
+    
+    writer = SummaryWriter(log_dir=log_dir.as_posix())
 
     best_epoch, best_val_acc = 0, 0.
-
-    # epoch: 0-9 joint; 10-29 final; 30-40 joint; 40-60 final
     for epoch in range(30):
+        
+        debug = epoch in [0, 5, 10]
         train_epoch(model=net, dataloader=dataloader_train, epoch=epoch,
-                    criterion=None, optimizer=None,
-                    logger=logger, device=device)
-
-        # if lr_scheduler:
-        #     lr_scheduler.step()
+                    writer=writer, logger=logger, debug=debug, device=device)
 
         epoch_acc_val = val_epoch(model=net, dataloader=dataloader_test, epoch=epoch,
                                   logger=logger, device=device)
 
-        # Early stopping based on validation accuracy
         if epoch_acc_val > best_val_acc:
             best_val_acc = epoch_acc_val
             best_epoch = epoch

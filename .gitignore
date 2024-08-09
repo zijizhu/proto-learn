@@ -5,3 +5,4 @@ __pycache__
 *.ipynb
 *.log
 *.pth
+*.tfevents.*

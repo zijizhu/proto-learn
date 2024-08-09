@@ -34,7 +34,8 @@ class ProtoDINO(nn.Module):
                           patch_prototype_logits: torch.Tensor,
                           labels: torch.Tensor,
                           patch_labels: torch.Tensor,
-                          debug: bool = False):
+                          debug: bool = False,
+                          use_gumbel: bool = False):
         patch_labels_flat = patch_labels.flatten()
         patches_flat = rearrange(patch_tokens, "B n_patches dim -> (B n_patches) dim")
         L = rearrange(patch_prototype_logits, "B n_patches C K -> (B n_patches) C K")
@@ -51,7 +52,7 @@ class ProtoDINO(nn.Module):
             I_c = patches_flat[class_fg_mask]  # shape: [N, dim]
             L_c = L[class_fg_mask, c, :]  # shape: [N, K,]
             
-            L_c_assignment, _ = sinkhorn_knopp(L_c)  # shape: [N, K,]
+            L_c_assignment, _ = sinkhorn_knopp(L_c, use_gumbel=use_gumbel)  # shape: [N, K,]
             
             P_c_new = torch.mm(L_c_assignment.t(), I_c)  # shape: [K, dim]
             
@@ -84,7 +85,7 @@ class ProtoDINO(nn.Module):
         
         return pseudo_patch_labels.to(dtype=torch.long)  # shape: [B, H, W,]
 
-    def forward(self, x: torch.Tensor, labels: torch.Tensor | None = None, debug: bool = False):
+    def forward(self, x: torch.Tensor, labels: torch.Tensor | None = None, *, debug: bool = False, use_gumbel: bool = False):
         patch_tokens = self.backbone.forward_features(x)["x_norm_patchtokens"]  # shape: [B, n_pathes, dim,]
 
         patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
@@ -97,7 +98,8 @@ class ProtoDINO(nn.Module):
                                                 patch_prototype_logits=patch_prototype_logits,
                                                 labels=labels,
                                                 patch_labels=pseudo_patch_labels,
-                                                debug=debug)
+                                                debug=debug,
+                                                use_gumbel=use_gumbel)
         
         image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,]
         class_logits = image_prototype_logits.sum(-1)  # shape: [B, C,]
