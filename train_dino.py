@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import logging
 import sys
 from collections import defaultdict
@@ -55,7 +56,7 @@ def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
     batch_saliency_maps = rearrange(batch_outputs["patch_prototype_logits"], "B (H W) C K -> B H W C K", H=H, W=W)
     
     figures = []
-    for b, (prototype_logits, saliency_maps, im_path) in enumerate(tqdm(zip(batch_prototype_logits, batch_saliency_maps, batch_im_paths), total=batch_size)):
+    for b, (prototype_logits, saliency_maps, im_path) in enumerate(zip(batch_prototype_logits, batch_saliency_maps, batch_im_paths)):
 
         logits, indices = prototype_logits.topk(k=topk, dim=-1)
         indices_C, indices_K = torch.unravel_index(indices=indices, shape=(C, K,))
@@ -85,9 +86,7 @@ def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
         plt.close(fig=fig)
         
         figures.append(fig_image)
-    
-    for fig in figures:
-        writer.add_image(f"Epoch {epoch} top {topk} prototypes/", F.pil_to_tensor(fig_image))
+        writer.add_image(f"Epoch {epoch} top {topk} prototypes/{b}", F.pil_to_tensor(fig_image))
 
     return figures
 
@@ -97,7 +96,7 @@ def visualize_prototype_assignments(outputs: dict[str, torch.Tensor],
     patch_labels = outputs["pseudo_patch_labels"].clone()  # shape: [B, H, W,]
     L_c_dict = {c: L_c.detach().clone() for c, L_c in outputs["L_c_assignment"].items()}
 
-    fig, axes = plt.subplots(10, 10, figsize=(10, 10,))
+    fig, axes = plt.subplots(8, 10, figsize=(10, 10,))
 
     for b, (c, ax) in enumerate(zip(labels.cpu().tolist(), axes.flat)):
         patch_labels_b = patch_labels[b, :, :]  # shape: [H, W,], dtype: torch.long
@@ -137,12 +136,12 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Su
     for i, batch in enumerate(tqdm(dataloader)):
         batch = tuple(item.to(device) for item in batch)
         images, labels, _, sample_indices = batch
-        outputs = model(images, labels=labels, use_gumbel=True)
+        outputs = model(images, labels=labels, debug=True, use_gumbel=False)
 
         mca_train(outputs["class_logits"][:, :-1], labels)
         
         if debug and i == 0:
-            batch_im_paths = [dataloader.dataset.samples[idx] for idx in sample_indices.tolist()]
+            batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
             visualize_topk_prototypes(outputs, batch_im_paths, writer, epoch)
             visualize_prototype_assignments(outputs, labels, writer, epoch)
 
@@ -164,7 +163,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int,
 
     for batch in tqdm(dataloader):
         batch = tuple(item.to(device) for item in batch)
-        images, labels, _ = batch
+        images, labels, _, _ = batch
         outputs = model(images)
 
         mca_val(outputs["class_logits"][:, :-1], labels)
@@ -176,9 +175,12 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int,
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--log_dir", type=Path, required=True)
+    args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    log_dir = Path("tmp")
+    log_dir = Path("logs") / args.log_dir
     log_dir.mkdir(exist_ok=True)
 
     logging.basicConfig(
@@ -223,8 +225,7 @@ def main():
     writer = SummaryWriter(log_dir=log_dir.as_posix())
 
     best_epoch, best_val_acc = 0, 0.
-    for epoch in range(30):
-        
+    for epoch in range(11):
         debug = epoch in [0, 5, 10]
         train_epoch(model=net, dataloader=dataloader_train, epoch=epoch,
                     writer=writer, logger=logger, debug=debug, device=device)
