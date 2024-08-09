@@ -91,12 +91,13 @@ def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
     return figures
 
 
-def visualize_prototype_assignments(outputs: dict[str, torch.Tensor],
-                                    labels: torch.Tensor, writer: SummaryWriter, epoch: int):
+def visualize_prototype_assignments(outputs: dict[str, torch.Tensor], labels: torch.Tensor, writer: SummaryWriter,
+                                    epoch: int, figsize: tuple[int, int] = (8, 10,)):
     patch_labels = outputs["pseudo_patch_labels"].clone()  # shape: [B, H, W,]
     L_c_dict = {c: L_c.detach().clone() for c, L_c in outputs["L_c_assignment"].items()}
 
-    fig, axes = plt.subplots(8, 10, figsize=(10, 10,))
+    nrows, ncols = figsize
+    fig, axes = plt.subplots(nrows, ncols, figsize=(10, 10,))
 
     for b, (c, ax) in enumerate(zip(labels.cpu().tolist(), axes.flat)):
         patch_labels_b = patch_labels[b, :, :]  # shape: [H, W,], dtype: torch.long
@@ -138,7 +139,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Su
         images, labels, _, sample_indices = batch
         outputs = model(images, labels=labels, debug=True, use_gumbel=False)
 
-        mca_train(outputs["class_logits"][:, :-1], labels)
+        mca_train(outputs["class_logits"], labels)
         
         if debug and i == 0:
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
@@ -156,17 +157,22 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Su
 
 
 @torch.inference_mode()
-def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int,
-              logger: Logger, device: torch.device,):
+def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: SummaryWriter,
+              logger: Logger, device: torch.device, debug: bool = False):
     model.eval()
     mca_val = MulticlassAccuracy(num_classes=len(dataloader.dataset.classes), average="micro").to(device)
 
-    for batch in tqdm(dataloader):
+    for i, batch in enumerate(tqdm(dataloader)):
         batch = tuple(item.to(device) for item in batch)
-        images, labels, _, _ = batch
+        images, labels, _, sample_indices = batch
         outputs = model(images)
 
-        mca_val(outputs["class_logits"][:, :-1], labels)
+        if debug and i == 0:
+            batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
+            visualize_topk_prototypes(outputs, batch_im_paths, writer, epoch)
+            visualize_prototype_assignments(outputs, labels, writer, epoch, figsize=(10, 10,))
+
+        mca_val(outputs["class_logits"], labels)
 
     epoch_acc_val = mca_val.compute().item()
     logger.info(f"EPOCH {epoch} val acc: {epoch_acc_val:.4f}")
@@ -231,7 +237,7 @@ def main():
                     writer=writer, logger=logger, debug=debug, device=device)
 
         epoch_acc_val = val_epoch(model=net, dataloader=dataloader_test, epoch=epoch,
-                                  logger=logger, device=device)
+                                  writer=writer, logger=logger, device=device)
 
         if epoch_acc_val > best_val_acc:
             best_val_acc = epoch_acc_val
