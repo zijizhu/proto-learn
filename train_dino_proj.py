@@ -128,8 +128,11 @@ def main():
     dataloader_train = DataLoader(dataset=dataset_train, batch_size=80, num_workers=8, shuffle=True)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=100, num_workers=8, shuffle=False)
 
-    net = ProtoDINO(proj=nn.Linear(768, 256))
-    criterion = Losses(l_patch_xe_coef=1, l_contrast_coef=1, l_im_xe_coef=0, l_clst_ceof=0, l_sep_coef=0,
+    # proj = nn.Sequential(nn.Linear(768, 256), nn.Linear(256, 256))
+    proj = nn.Linear(768, 256)
+    net = ProtoDINO(proj=proj)
+
+    criterion = Losses(l_patch_xe_coef=1, l_contrast_coef=0.1, l_im_xe_coef=0, l_clst_ceof=0, l_sep_coef=0,
                        patch_xe_ignore_index=200, contrast_ignore_bg=False, n_classes=200, n_prototypes=5)
     for params in net.backbone.parameters():
         params.requires_grad = False
@@ -146,7 +149,7 @@ def main():
                     writer=writer, logger=logger, debug=debug, device=device)
 
         epoch_acc_val = val_epoch(model=net, dataloader=dataloader_test, epoch=epoch,
-                                  writer=writer, logger=logger, device=device)
+                                  writer=writer, debug=debug, logger=logger, device=device)
 
         if epoch_acc_val > best_val_acc:
             best_val_acc = epoch_acc_val

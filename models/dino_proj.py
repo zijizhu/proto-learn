@@ -39,13 +39,13 @@ class ProtoDINO(nn.Module):
                           patch_labels: torch.Tensor,
                           debug: bool = False,
                           use_gumbel: bool = False):
-        patch_labels_flat = patch_labels.flatten()  # shape: [N,]
+        patch_labels_flat = patch_labels.flatten()  # shape: [B*H*W,]
         patches_flat = rearrange(patch_tokens, "B n_patches dim -> (B n_patches) dim")
         L = rearrange(patch_prototype_logits, "B n_patches C K -> (B n_patches) C K")
         
         P_old = self.prototypes.clone()
         
-        patch_prototype_indices = torch.empty_like(patch_labels_flat, dtype=torch.long)  # shape: [N,]
+        patch_prototype_indices = torch.full_like(patch_labels_flat, self.n_classes - 1, dtype=torch.long)  # shape: [B*H*W,]
         
         debug_dict = defaultdict(dict) if debug else None
 
@@ -70,12 +70,12 @@ class ProtoDINO(nn.Module):
                 debug_dict["L_c"][c] = L_c
                 debug_dict["L_c_assignment"][c] = L_c_assignment
             
-            patch_prototype_indices[class_fg_mask] = L_c_assignment_indices
+            patch_prototype_indices[class_fg_mask] = L_c_assignment_indices + (c * self.n_prototypes)
         
         if debug:
             return patch_prototype_indices, dict(debug_dict)
 
-        return patch_prototype_indices
+        return patch_prototype_indices, None  # shape: [N,]
                 
 
     def get_pseudo_patch_labels(self, patch_tokens: torch.Tensor, labels: torch.Tensor):
@@ -105,25 +105,25 @@ class ProtoDINO(nn.Module):
         
         if labels is not None:
             pseudo_patch_labels = self.get_pseudo_patch_labels(backbone_patch_tokens.detach(), labels=labels)
-            patch_prototype_indices, debug_dict = self.update_prototypes(patch_tokens=patch_tokens_norm,
-                                                patch_prototype_logits=patch_prototype_logits,
-                                                labels=labels,
-                                                patch_labels=pseudo_patch_labels,
+            patch_prototype_indices, debug_dict = self.update_prototypes(patch_tokens=patch_tokens_norm.detach(),
+                                                patch_prototype_logits=patch_prototype_logits.detach(),
+                                                labels=labels.detach(),
+                                                patch_labels=pseudo_patch_labels.detach(),
                                                 debug=debug,
                                                 use_gumbel=use_gumbel)
         
-        image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,]
+        image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,], C=n_classes+1
         class_logits = image_prototype_logits.sum(-1)  # shape: [B, C,]
 
         outputs =  dict(
-            patch_prototype_logits=patch_prototype_logits,
-            image_prototype_logits=image_prototype_logits,
-            class_logits=class_logits[:, :-1]
+            patch_prototype_logits=patch_prototype_logits,  # shape: [B, n_patches, C, K,]
+            image_prototype_logits=image_prototype_logits,  # shape: [B, C, K,]
+            class_logits=class_logits[:, :-1]  # shape: [B, n_classes,]
         )
         
         if labels is not None:
-            outputs["pseudo_patch_labels"] = pseudo_patch_labels
-            outputs["patch_prototype_indices"] = patch_prototype_indices
+            outputs["pseudo_patch_labels"] = pseudo_patch_labels  # shape: [B, H, W,]
+            outputs["patch_prototype_indices"] = patch_prototype_indices  # shape: [B*H*W,]
             if debug:
                 outputs.update(debug_dict)
 
@@ -149,22 +149,30 @@ class Losses(nn.Module):
         self.n_classes, self.n_prototypes = n_classes, n_prototypes
         
         self.im_xe = nn.CrossEntropyLoss()
-        self.patch_xe = nn.CrossEntropyLoss(ignore_index=patch_xe_ignore_index)
+        # self.patch_xe = nn.CrossEntropyLoss(ignore_index=patch_xe_ignore_index)
+        self.patch_xe = nn.CrossEntropyLoss()
         self.patch_prototype_contrast = nn.CrossEntropyLoss()
     
-    def forward(self, outputs: dict[str, torch.Tensor], image_labels, patch_prototype_labels: torch.Tensor):
+    def forward(self, outputs: dict[str, torch.Tensor], image_labels):
+        B, H, W = outputs["pseudo_patch_labels"].shape
         loss_dict = dict()
         if self.l_im_xe_coef != 0:
             loss_dict["l_im_xe"] = self.l_im_xe_coef * self.im_xe(outputs["class_logits"], image_labels)
         if self.l_patch_xe_coef != 0:
-            loss_dict["l_patch_xe"] = self.l_patch_xe_coef * self.patch_xe(outputs["patch_prototype_logits"],
+            patch_class_logits = rearrange(outputs["patch_prototype_logits"].sum(-1), "B (H W) C -> B C H W", H=H, W=W)
+            # print(patch_class_logits.shape, outputs["pseudo_patch_labels"].shape, outputs["pseudo_patch_labels"].max())
+            loss_dict["l_patch_xe"] = self.l_patch_xe_coef * self.patch_xe(patch_class_logits,
                                                                            outputs["pseudo_patch_labels"])
+            # print(loss_dict)
         if self.l_contrast_coef != 0:
             patch_prototype_labels = outputs["patch_prototype_indices"]
             mask = patch_prototype_labels < (self.n_classes * self.n_prototypes)
-            contrast_logits = outputs["patch_prototype_logits"][mask]
+
+            contrast_logits = rearrange(outputs["patch_prototype_logits"], "B (H W) C K -> (B H W) (C K)", H=H, W=W)[mask, :-5]
             contrast_labels = patch_prototype_labels[mask]
+            # print(contrast_logits.shape, contrast_labels.shape, contrast_labels.max(), contrast_labels.min())
             loss_dict["l_contrast"] = self.l_contrast_coef * self.patch_prototype_contrast(contrast_logits, contrast_labels)
+        # print(loss_dict)
         # TODO add computations for cluster and sep loss if necessary
         
         return loss_dict

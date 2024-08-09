@@ -38,8 +38,8 @@ def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
     b = 0
     H = W = latent_size
 
-    batch_prototype_logits = rearrange(batch_outputs["image_prototype_logits"], "B C K -> B (C K)")
-    batch_saliency_maps = rearrange(batch_outputs["patch_prototype_logits"], "B (H W) C K -> B H W C K", H=H, W=W)
+    batch_prototype_logits = rearrange(batch_outputs["image_prototype_logits"].detach(), "B C K -> B (C K)")
+    batch_saliency_maps = rearrange(batch_outputs["patch_prototype_logits"].detach(), "B (H W) C K -> B H W C K", H=H, W=W)
     
     figures = []
     for b, (prototype_logits, saliency_maps, im_path) in enumerate(zip(batch_prototype_logits, batch_saliency_maps, batch_im_paths)):
@@ -79,7 +79,7 @@ def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
 
 def visualize_prototype_assignments(outputs: dict[str, torch.Tensor], labels: torch.Tensor, writer: SummaryWriter,
                                     epoch: int, epoch_name: str, figsize: tuple[int, int] = (8, 10,)):
-    patch_labels = outputs["pseudo_patch_labels"].clone()  # shape: [B, H, W,]
+    patch_labels = outputs["pseudo_patch_labels"].detach().clone()  # shape: [B, H, W,]
     L_c_dict = {c: L_c.detach().clone() for c, L_c in outputs["L_c_assignment"].items()}
 
     nrows, ncols = figsize
