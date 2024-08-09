@@ -165,7 +165,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
     for i, batch in enumerate(tqdm(dataloader)):
         batch = tuple(item.to(device) for item in batch)
         images, labels, _, sample_indices = batch
-        outputs = model(images)
+        outputs = model(images, labels=labels, debug=True, use_gumbel=False)
 
         if debug and i == 0:
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
