@@ -105,12 +105,13 @@ class ProtoDINO(nn.Module):
         
         if labels is not None:
             pseudo_patch_labels = self.get_pseudo_patch_labels(backbone_patch_tokens.detach(), labels=labels)
-            patch_prototype_indices, debug_dict = self.update_prototypes(patch_tokens=patch_tokens_norm.detach(),
-                                                patch_prototype_logits=patch_prototype_logits.detach(),
-                                                labels=labels.detach(),
-                                                patch_labels=pseudo_patch_labels.detach(),
-                                                debug=debug,
-                                                use_gumbel=use_gumbel)
+            patch_prototype_indices, debug_dict = self.update_prototypes(
+                patch_tokens=patch_tokens_norm.detach(),
+                patch_prototype_logits=patch_prototype_logits.detach(),
+                labels=labels,
+                patch_labels=pseudo_patch_labels,
+                debug=debug,
+                use_gumbel=use_gumbel)
         
         image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,], C=n_classes+1
         class_logits = image_prototype_logits.sum(-1)  # shape: [B, C,]
@@ -166,10 +167,11 @@ class Losses(nn.Module):
             # print(loss_dict)
         if self.l_contrast_coef != 0:
             patch_prototype_labels = outputs["patch_prototype_indices"]
-            mask = patch_prototype_labels < (self.n_classes * self.n_prototypes)
+            # mask = patch_prototype_labels < (self.n_classes * self.n_prototypes)
 
-            contrast_logits = rearrange(outputs["patch_prototype_logits"], "B (H W) C K -> (B H W) (C K)", H=H, W=W)[mask, :-5]
-            contrast_labels = patch_prototype_labels[mask]
+            # contrast_logits = rearrange(outputs["patch_prototype_logits"], "B (H W) C K -> (B H W) (C K)", H=H, W=W)[mask, :-5]
+            contrast_logits = rearrange(outputs["patch_prototype_logits"], "B (H W) C K -> (B H W) (C K)", H=H, W=W)
+            contrast_labels = patch_prototype_labels
             # print(contrast_logits.shape, contrast_labels.shape, contrast_labels.max(), contrast_labels.min())
             loss_dict["l_contrast"] = self.l_contrast_coef * self.patch_prototype_contrast(contrast_logits, contrast_labels)
         # print(loss_dict)
