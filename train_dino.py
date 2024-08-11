@@ -34,9 +34,8 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
         outputs = model(images, labels=labels, debug=True, use_gumbel=False)
 
         if criterion is not None and optimizer is not None:
-            loss_dict = criterion(outputs=outputs["class_logits"], image_labels=labels)
-            
-            loss = sum(item for item in loss_dict.values())
+            loss = criterion(outputs["class_logits"], labels)
+            loss_dict = dict(xe=loss.detach())
             
             loss.backward()
             optimizer.step()
@@ -132,7 +131,7 @@ def main():
         debug = epoch in [0, 5, 10, 15, 20]
         if epoch == 5:
             for params in net.fc.parameters():
-                params.requires_grad = False
+                params.requires_grad = True
         train_epoch(model=net, criterion=criterion if epoch >= 5 else None, dataloader=dataloader_train, epoch=epoch,
                     optimizer=optimizer if epoch >= 5 else None, writer=writer, logger=logger, device=device, debug=debug)
 
