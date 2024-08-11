@@ -40,7 +40,7 @@ class ProtoDINO(nn.Module):
         if cls_head == "fc":
             self.fc = nn.Linear(self.n_prototypes * self.n_classes, self.n_classes, bias=False)
             prototype_class_assiciation = torch.eye(self.n_classes).repeat_interleave(self.n_prototypes, dim=0)
-            self.fc.weight = nn.Parameter(prototype_class_assiciation - 0.5 * (1 - prototype_class_assiciation))
+            self.fc.weight = nn.Parameter((prototype_class_assiciation - 0.5 * (1 - prototype_class_assiciation)).t())
         else:
             self.fc = None
 
