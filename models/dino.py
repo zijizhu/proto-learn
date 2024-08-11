@@ -44,7 +44,7 @@ class ProtoDINO(nn.Module):
         else:
             self.fc = None
         
-        self.freeze_prototypes = True
+        self.freeze_prototypes = False
 
     def update_prototypes(self,
                           patch_tokens: torch.Tensor,

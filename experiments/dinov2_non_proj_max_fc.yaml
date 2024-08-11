@@ -6,6 +6,6 @@ dataset:
 optim:
   epochs: 100
   fc_start_epoch: 10
-  fc_lr: 0.003
+  fc_lr: 0.005
 debug:
   epochs: [0, 5, 10, 15, 20, 25]

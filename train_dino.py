@@ -127,12 +127,14 @@ def main():
     best_epoch, best_val_acc = 0, 0.
     fc_start_epoch = config["optim"].get("fc_start_epoch", None)
     for epoch in range(config["optim"]["epochs"]):
-        debug = epoch in config["debug"]["epochs"]
         epoch_train_fc = train_fc and (epoch >= fc_start_epoch)
-        if epoch == fc_start_epoch:
+        if train_fc and (epoch == fc_start_epoch):
             net.freeze_prototypes = True
             for params in net.fc.parameters():
                 params.requires_grad = True
+
+        debug = epoch in config["debug"]["epochs"]
+
         train_epoch(
             model=net,
             criterion=criterion if epoch_train_fc else None,
