@@ -6,4 +6,3 @@ __pycache__
 *.log
 *.pth
 *.tfevents.*
-experiments/

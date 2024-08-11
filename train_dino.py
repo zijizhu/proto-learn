@@ -102,7 +102,7 @@ def main():
 
     dataset_dir = Path("datasets") / "cub200_cropped"
     attribute_labels_path = Path("datasets") / "class_attribute_labels_continuous.txt"
-    training_set_path = "train_cropped"
+    training_set_path = "train_cropped_augmented" if config["dataset"]["augmentation"] else "train_cropped"
     dataset_train = CUBDataset((dataset_dir / training_set_path).as_posix(),
                                attribute_labels_path.as_posix(),
                                transforms=transforms)
@@ -111,7 +111,7 @@ def main():
                               transforms=transforms)
 
     dataloader_train = DataLoader(dataset=dataset_train, batch_size=80, num_workers=8, shuffle=True)
-    dataloader_test = DataLoader(dataset=dataset_test, batch_size=100, num_workers=8, shuffle=False)
+    dataloader_test = DataLoader(dataset=dataset_test, batch_size=100, num_workers=8, shuffle=True)
 
     train_fc = config["model"]["cls_head"] == "fc"
     net = ProtoDINO(pooling_method=config["model"]["pooling_method"], cls_head=config["model"]["cls_head"])
@@ -125,12 +125,12 @@ def main():
     writer = SummaryWriter(log_dir=log_dir.as_posix())
 
     best_epoch, best_val_acc = 0, 0.
-    fc_start_epoch = config["optim"]["fc_start_epoch"]
-    for epoch in range(80):
+    fc_start_epoch = config["optim"].get("fc_start_epoch", None)
+    for epoch in range(config["optim"]["epochs"]):
         debug = epoch in config["debug"]["epochs"]
-        epoch_train_fc = epoch >= fc_start_epoch and train_fc
+        epoch_train_fc = train_fc and (epoch >= fc_start_epoch)
         if epoch == fc_start_epoch:
-            net.gamma = 0.999
+            net.update_prototypes = False
             for params in net.fc.parameters():
                 params.requires_grad = True
         train_epoch(

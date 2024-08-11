@@ -1,0 +1,9 @@
+model:
+  pooling_method: "max"
+  cls_head: "max"
+dataset:
+  augmentation: false
+optim:
+  epochs: 20
+debug:
+  epochs: [0, 5, 10, 15, 20]

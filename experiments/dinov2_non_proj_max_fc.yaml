@@ -1,0 +1,11 @@
+model:
+  pooling_method: "max"
+  cls_head: "fc"
+dataset:
+  augmentation: false
+optim:
+  epochs: 100
+  fc_start_epoch: 10
+  fc_lr: 0.003
+debug:
+  epochs: [0, 5, 10, 15, 20, 25]

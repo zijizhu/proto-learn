@@ -16,7 +16,7 @@ class ProtoDINO(nn.Module):
     deep high-resolution representation learning for human pose estimation, CVPR2019
     """
 
-    def __init__(self, pooling_method: str, cls_head: str, *, gamma: float = 0.9, n_prototypes: int = 5, n_classes: int = 200,
+    def __init__(self, pooling_method: str, cls_head: str, *, gamma: float = 0.99, n_prototypes: int = 5, n_classes: int = 200,
                  pca_fg_threshold: float = 0.5, dim: int = 768):
         super().__init__()
         self.gamma = gamma
@@ -43,6 +43,8 @@ class ProtoDINO(nn.Module):
             self.fc.weight = nn.Parameter((prototype_class_assiciation - 0.5 * (1 - prototype_class_assiciation)).t())
         else:
             self.fc = None
+        
+        self.update_prototypes = True
 
     def update_prototypes(self,
                           patch_tokens: torch.Tensor,
@@ -73,7 +75,7 @@ class ProtoDINO(nn.Module):
             
             P_c_old = P_old[c, :, :]
             
-            if self.training:
+            if self.training and self.update_prototypes:
                 self.prototypes[c, ...] = momentum_update(P_c_old, P_c_new, momentum=self.gamma)
             
             if debug:
