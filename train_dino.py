@@ -125,7 +125,7 @@ def main():
     writer = SummaryWriter(log_dir=log_dir.as_posix())
 
     best_epoch, best_val_acc = 0, 0.
-    fc_start_epoch = config["optim"]["start_epoch"]
+    fc_start_epoch = config["optim"]["fc_start_epoch"]
     for epoch in range(80):
         debug = epoch in config["debug"]["epochs"]
         epoch_train_fc = epoch >= fc_start_epoch and train_fc
