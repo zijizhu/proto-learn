@@ -88,26 +88,10 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--log_dir", type=Path, default="tmp")
-    args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     config, log_dir = setup_config_and_logging()
 
-    log_dir = Path("logs") / args.log_dir
-    log_dir.mkdir(exist_ok=True)
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(asctime)s][%(name)s][%(levelname)s] - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[
-            logging.FileHandler((log_dir / "train.log").as_posix()),
-            logging.StreamHandler(sys.stdout),
-        ],
-        force=True,
-    )
     logger = logging.getLogger(__name__)
 
     L.seed_everything(42)
