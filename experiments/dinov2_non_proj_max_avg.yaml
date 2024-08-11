@@ -1,6 +1,6 @@
 model:
   pooling_method: "max"
-  cls_head: "max"
+  cls_head: "avg"
 dataset:
   augmentation: false
 optim:

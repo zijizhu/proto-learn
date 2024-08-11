@@ -130,7 +130,7 @@ def main():
         debug = epoch in config["debug"]["epochs"]
         epoch_train_fc = train_fc and (epoch >= fc_start_epoch)
         if epoch == fc_start_epoch:
-            net.update_prototypes = False
+            net.freeze_prototypes = True
             for params in net.fc.parameters():
                 params.requires_grad = True
         train_epoch(

@@ -44,7 +44,7 @@ class ProtoDINO(nn.Module):
         else:
             self.fc = None
         
-        self.update_prototypes = True
+        self.freeze_prototypes = True
 
     def update_prototypes(self,
                           patch_tokens: torch.Tensor,
@@ -75,7 +75,7 @@ class ProtoDINO(nn.Module):
             
             P_c_old = P_old[c, :, :]
             
-            if self.training and self.update_prototypes:
+            if self.training and (not self.freeze_prototypes):
                 self.prototypes[c, ...] = momentum_update(P_c_old, P_c_new, momentum=self.gamma)
             
             if debug:
