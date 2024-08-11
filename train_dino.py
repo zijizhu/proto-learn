@@ -34,7 +34,7 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
         outputs = model(images, labels=labels, debug=True, use_gumbel=False)
 
         if criterion is not None and optimizer is not None:
-            loss_dict = criterion(outputs=outputs, image_labels=labels)
+            loss_dict = criterion(outputs=outputs["class_logits"], image_labels=labels)
             
             loss = sum(item for item in loss_dict.values())
             
