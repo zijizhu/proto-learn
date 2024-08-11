@@ -37,7 +37,12 @@ class ProtoDINO(nn.Module):
         self.pooling_method = pooling_method
         assert cls_head in ["fc", "sum", "avg"]
         self.cls_head = cls_head
-        self.fc = nn.Linear(self.n_prototypes * self.n_classes, n_classes) if cls_head == "fc" else None
+        if cls_head == "fc":
+            self.fc = nn.Linear(self.n_prototypes * self.n_classes, self.n_classes, bias=False)
+            prototype_class_assiciation = torch.eye(self.n_classes).repeat_interleave(self.n_prototypes, dim=0)
+            self.fc.weight = nn.Parameter(prototype_class_assiciation - 0.5 * (1 - prototype_class_assiciation))
+        else:
+            self.fc = None
 
     def update_prototypes(self,
                           patch_tokens: torch.Tensor,
