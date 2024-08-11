@@ -118,7 +118,7 @@ def main():
 
     cls_head = config.model.cls_head
     net = ProtoDINO(pooling_method=config.model.pooling_method, cls_head=cls_head)
-    for params in net.backbone.parameters():
+    for params in net.parameters():
         params.requires_grad = False
     
     optimizer = optim.Adam(net.fc.parameters(), lr=config.optim.fc_lr) if cls_head == "fc" else None
@@ -128,10 +128,13 @@ def main():
     writer = SummaryWriter(log_dir=log_dir.as_posix())
 
     best_epoch, best_val_acc = 0, 0.
-    for epoch in range(11):
-        debug = epoch in [0, 5, 10]
-        train_epoch(model=net, criterion=criterion, dataloader=dataloader_train, epoch=epoch,
-                    optimizer=optimizer, writer=writer, logger=logger, device=device, debug=debug)
+    for epoch in range(30):
+        debug = epoch in [0, 5, 10, 15, 20]
+        if epoch == 5:
+            for params in net.fc.parameters():
+                params.requires_grad = False
+        train_epoch(model=net, criterion=criterion if epoch >= 5 else None, dataloader=dataloader_train, epoch=epoch,
+                    optimizer=optimizer if epoch >= 5 else None, writer=writer, logger=logger, device=device, debug=debug)
 
         epoch_acc_val = val_epoch(model=net, dataloader=dataloader_test, epoch=epoch,
                                   writer=writer, logger=logger, device=device,  debug=debug)
