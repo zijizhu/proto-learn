@@ -131,7 +131,7 @@ class ProtoDINO(nn.Module):
         if self.cls_head == "fc":
             image_prototype_logits_flat = rearrange(image_prototype_logits[:, :-1, :],
                                                     "B n_classes K -> B (n_classes K)")
-            class_logits = self.fc(image_prototype_logits_flat)  # shape: [B, n_classes,]
+            class_logits = self.fc(image_prototype_logits_flat.detach())  # shape: [B, n_classes,]
         elif self.cls_head == "mean":
             class_logits = image_prototype_logits[:, :-1, :].mean(-1)  # shape: [B, C,]
         else:
