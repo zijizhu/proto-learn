@@ -4,6 +4,47 @@ from abc import ABC
 from torch import nn
 
 
+def l2_conv(x: torch.Tensor, weight: torch.Tensor, stride: int):
+    """
+    Compute x ** 2 - 2 * x * prototype + prototype ** 2,
+    where x is a feature map of shape
+    All channels of x2_patch_sum at position i, j have the same values
+    All spacial values of y2_reshape at each channel are the same
+    """
+    ones = torch.ones_like(weight)
+    x2 = x ** 2  # shape: [b, c, h, w]
+    x2_patch_sum = F.conv2d(input=x2, weight=ones, stride=stride)  # shape: [b, num_prototypes, h, w]
+
+    y2 = weight ** 2
+    y2 = torch.sum(y2, dim=(1, 2, 3))  # shape [num_prototypes, ]
+    y2_reshape = y2.view(-1, 1, 1) # shape [num_prototypes, 1, 1]
+
+    xy = F.conv2d(input=x, weight=weight, stride=stride)
+    intermediate_result = - 2 * xy + y2_reshape  # y2_reshape broadcasted to [b, num_prototypes, h, w]
+
+    distances = F.relu(x2_patch_sum + intermediate_result)
+
+    return distances  # shape: [b, num_prototypes, h, w]
+
+
+def get_projection_layer(config: str, first_dim: int = 2048):
+    layer_names = config.split(",")
+    assert all(name.isdigit() or name in ["relu", "sigmoid"] for name in layer_names)
+
+    layers = []
+    last_dim = first_dim
+    for name in layer_names:
+        if name.isdigit():
+            dim = int(name)
+            layers.append(nn.Conv2d(last_dim, dim, kernel_size=1))
+            last_dim = dim
+        elif name == "relu":
+            layers.append(nn.ReLU())
+        else:
+            layers.append(nn.Sigmoid())
+    return nn.Sequential(*layers)
+
+
 def momentum_update(old_value, new_value, momentum, debug=False):
     update = momentum * old_value + (1 - momentum) * new_value
     if debug:

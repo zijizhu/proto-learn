@@ -1,4 +1,26 @@
+from math import sqrt
+
+import torch
+from einops import rearrange
 from torch import nn
+
+
+class DINOv2Backbone(nn.Module):
+    def __init__(self, name: str = "dinov2_vitb14_reg") -> None:
+        super().__init__()
+        self.dino = torch.hub.load('facebookresearch/dinov2', name)
+    
+    def forward(self, x: torch.Tensor, key: str = "x_norm_patch_tokens", reshape: bool = True) -> torch.Tensor:
+        feature_dict = self.dino.forward_features(x)  # type: dict[str, torch.Tensor]
+        feature = feature_dict[key]
+        
+        B, n_patches, dim = feature.shape
+
+        if reshape and key == "x_norm_patch_tokens":
+            H = W = int(sqrt(n_patches))
+            feature = rearrange(feature, "B (H W) dim -> B dim H W", H=H, W=W)
+        
+        return feature
 
 
 def load_backbone(backbone_name: str) -> tuple[nn.Module, int]:
@@ -18,5 +40,12 @@ def load_backbone(backbone_name: str) -> tuple[nn.Module, int]:
         from torchvision.models import DenseNet121_Weights, densenet121
         backbone = densenet121(weights=DenseNet121_Weights.DEFAULT)
         return backbone.features, 1024
+    elif "dinov2" in backbone_name:
+        assert backbone_name in ["dinov2_vitb14_reg"]
+        name_to_dim = {
+            "dinov2_vitb14_reg": 768
+        }
+        backbone = DINOv2Backbone(name=backbone_name)
+        return backbone, name_to_dim[backbone_name]
     else:
         raise NotImplementedError

@@ -119,6 +119,7 @@ def main():
         params.requires_grad = False
     
     optimizer = optim.Adam(net.fc.parameters(), lr=config["optim"]["fc_lr"]) if train_fc else None
+    scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=30) if train_fc else None
     criterion = nn.CrossEntropyLoss() if train_fc else None
     
     net.to(device)
@@ -144,6 +145,9 @@ def main():
             logger=logger,
             device=device,
             debug=debug)
+
+        if scheduler is not None:
+            scheduler.step()
 
         epoch_acc_val = val_epoch(model=net, dataloader=dataloader_test, epoch=epoch,
                                   writer=writer, logger=logger, device=device,  debug=debug)

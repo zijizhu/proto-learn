@@ -2,15 +2,18 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from .utils import l2_conv
+
 
 class ProtoPNet(nn.Module):
     def __init__(self, backbone: nn.Module, proj_layers: nn.Module,
-                 prototype_shape: tuple, num_classes: int, init_weights=True, activation_fn='log'):
+                 prototype_shape: tuple[int, ...], num_classes: int, init_weights=True, activation_fn='log'):
         super().__init__()
         self.prototype_shape = prototype_shape
-        self.num_prototypes, self.dim, _, _ = prototype_shape
+        self.num_prototypes, self.dim, proto_size, proto_size = prototype_shape
         self.num_classes = num_classes
         self.epsilon = 1e-4
+        self.stride = proto_size
 
         assert activation_fn in ["log", "linear"]
         self.activation_fn = activation_fn
@@ -33,27 +36,6 @@ class ProtoPNet(nn.Module):
         if init_weights:
             self._init_weights()
 
-    def _l2_dists(self, x):
-        """
-        Compute x ** 2 - 2 * x * prototype + prototype ** 2,
-        where x is a feature map of shape
-        All channels of x2_patch_sum at position i, j have the same values
-        All spacial values of p2_reshape at each channel are the same
-        """
-        x2 = x ** 2  # shape: [b, c, h, w]
-        x2_patch_sum = F.conv2d(input=x2, weight=self.ones)  # shape: [b, num_prototypes, h, w]
-
-        p2 = self.prototype_vectors ** 2
-        p2 = torch.sum(p2, dim=(1, 2, 3))  # shape [num_prototypes, ]
-        p2_reshape = p2.view(-1, 1, 1) # shape [num_prototypes, 1, 1]
-
-        xp = F.conv2d(input=x, weight=self.prototype_vectors)
-        intermediate_result = - 2 * xp + p2_reshape  # p2_reshape broadcasted to [b, num_prototypes, h, wv]
-
-        distances = F.relu(x2_patch_sum + intermediate_result)
-
-        return distances  # shape: [b, num_prototypes, h, w]
-
     def distance_to_similarity(self, distances):
         if self.activation_fn == 'log':
             return torch.log((distances + 1) / (distances + self.epsilon))
@@ -63,7 +45,8 @@ class ProtoPNet(nn.Module):
     def forward(self, x) -> dict[str, torch.Tensor]:
         f = self.backbone(x)
         f = self.proj(f)
-        dists = self._l2_dists(f)  # shape: [b, num_prototypes, h, w]
+        dists = l2_conv(f, self.prototype_vectors, stride=self.stride)  # shape: [b, num_prototypes, h, w]
+        dists = F.relu(dists)
         b, num_prototypes, h, w = dists.shape
 
         # 2D min pooling
@@ -122,12 +105,13 @@ class ProtoPNetLoss(nn.Module):
                                                proto_class_association)
             loss_dict["l_clst"] = self.l_clst_coef * l_clst
             loss_dict["l_sep"] = self.l_sep_coef * l_sep
-            loss_dict["_l_clst_raw"] = self.l_clst_coef
-            loss_dict["_l_sep_raw"] = self.l_sep_coef
+            loss_dict["_l_clst_raw"] = l_clst
+            loss_dict["_l_sep_raw"] = l_sep
 
-        l1_mask = 1 - proto_class_association.T
-        l1 = (fc_weights * l1_mask).norm(p=1)
-        loss_dict["l_l1"] = self.l_l1_coef * l1
+        if self.l_l1_coef != 0:
+            l1_mask = 1 - proto_class_association.T
+            l1 = (fc_weights * l1_mask).norm(p=1)
+            loss_dict["l_l1"] = self.l_l1_coef * l1
         return loss_dict
 
     @staticmethod
@@ -145,20 +129,3 @@ class ProtoPNetLoss(nn.Module):
 
         return cluster_cost, separation_cost
 
-
-def get_projection_layer(config: str, first_dim: int = 2048):
-    layer_names = config.split(",")
-    assert all(name.isdigit() or name in ["relu", "sigmoid"] for name in layer_names)
-
-    layers = []
-    last_dim = first_dim
-    for name in layer_names:
-        if name.isdigit():
-            dim = int(name)
-            layers.append(nn.Conv2d(last_dim, dim, kernel_size=1))
-            last_dim = dim
-        elif name == "relu":
-            layers.append(nn.ReLU())
-        else:
-            layers.append(nn.Sigmoid())
-    return nn.Sequential(*layers)
