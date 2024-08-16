@@ -4,7 +4,7 @@ model:
 dataset:
   augmentation: false
 optim:
-  epochs: 20
+  epochs: 80
   fc_start_epoch: 10
   backbone_lr: 0.005
   fc_lr: 0.05

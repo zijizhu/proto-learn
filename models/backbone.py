@@ -78,9 +78,8 @@ class DINOv2BackboneExpanded(nn.Module):
             for name, param in self.dino.named_parameters():
                 param.requires_grad = name in learnable_param_names
         else:
-            self.dino = torch.hub.load('facebookresearch/dinov2', name)  # type: nn.Module
+            self.dino = torch.hub.load('facebookresearch/dinov2', name[:-1])  # type: nn.Module
             self.learnable_param_names = list(name for name, _ in self.dino.named_parameters())
-        self._check()
     
     def _check(self):
         print("Learnable parameters:")
@@ -90,7 +89,8 @@ class DINOv2BackboneExpanded(nn.Module):
     
     def set_requires_grad(self):
         for name, param in self.dino.named_parameters():
-                param.requires_grad = name in self.learnable_param_names
+            param.requires_grad = name in self.learnable_param_names
+        self._check()
 
     def forward(self, x: torch.Tensor, key: str = "x_norm_patchtokens", reshape: bool = False) -> torch.Tensor:
         feature_dict = self.dino.forward_features(x)  # type: dict[str, torch.Tensor]

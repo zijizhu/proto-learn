@@ -44,7 +44,7 @@ class ProtoDINO(nn.Module):
             self.sa = None
         elif cls_head == "sa":
             self.fc = None
-            self.sa = nn.Parameter(torch.full((self.n_classes, self.n_prototypes,), 1 / self.n_prototypes))
+            self.sa = nn.Parameter(torch.ones((self.n_classes, self.n_prototypes,), dtype=torch.float32))
         else:
             self.fc = None
             self.sa = None

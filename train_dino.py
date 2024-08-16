@@ -119,9 +119,8 @@ def main():
     dataloader_train = DataLoader(dataset=dataset_train, batch_size=128, num_workers=8, shuffle=True)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=8, shuffle=True)
 
-    train_fc = config["model"]["cls_head"] in ["fc", "sa"]
-    backbone = DINOv2BackboneExpanded(name="dinov2_vitb14_reg4", n_splits=1)
-    # backbone = DINOv2Backbone("dinov2_vitb14_reg")
+    n_splits = 1
+    backbone = DINOv2BackboneExpanded(name="dinov2_vitb14_reg4", n_splits=n_splits)
     net = ProtoDINO(backbone=backbone,
                     pooling_method=config["model"]["pooling_method"],
                     cls_head=config["model"]["cls_head"], dim=backbone.dim)
@@ -129,9 +128,12 @@ def main():
     for params in net.parameters():
         params.requires_grad = False
     
+    train_fc = (config["model"]["cls_head"] in ["fc", "sa"]) or n_splits > 0
     optimizer = None
     scheduler = None
     criterion = nn.CrossEntropyLoss() if train_fc else None
+    
+    net.backbone._check()
     
     net.to(device)
     writer = SummaryWriter(log_dir=log_dir.as_posix())
@@ -145,11 +147,11 @@ def main():
             net.freeze_prototypes = True
             net.sa.requires_grad = True
             net.backbone.set_requires_grad()
-            optimizer = optim.SGD([
-                {'params': net.backbone.parameters(), 'lr': config["optim"]["backbone_lr"]},
-                {'params': net.sa, 'lr': config["optim"]["fc_lr"]}
-            ], momentum=0.9)
-            scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=500)
+            
+            param_groups = [{'params': filter(net.backbone.parameters(), lambda p: p.requires_grad), 'lr': config["optim"]["backbone_lr"]}]
+            param_groups += [{'params': net.sa, 'lr': config["optim"]["fc_lr"]}] if config["model"]["cls_head"] == "sa" else []
+            optimizer = optim.SGD(param_groups, momentum=0.9)
+            scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=47 * 10, num_training_steps=47 * 80)
 
         debug = epoch in config["debug"]["epochs"]
 
