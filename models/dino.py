@@ -140,7 +140,8 @@ class ProtoDINO(nn.Module):
         image_prototype_logits = image_prototype_logits[:, :-1, :]
         
         if self.cls_head == "sa":
-            image_prototype_logits_weighted = image_prototype_logits * self.sa
+            sa_weights = F.softmax(self.sa, dim=-1) * self.n_prototypes
+            image_prototype_logits_weighted = image_prototype_logits * sa_weights
             class_logits = image_prototype_logits_weighted.sum(-1)
         elif self.cls_head == "fc":
             image_prototype_logits_flat = rearrange(image_prototype_logits,

@@ -1,4 +1,6 @@
 model:
+  name: "dinov2_vitb14_reg4"
+  n_splits: 1
   pooling_method: "max"
   cls_head: "sa"
 dataset:

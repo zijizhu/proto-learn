@@ -120,7 +120,7 @@ def main():
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=8, shuffle=True)
 
     n_splits = 1
-    backbone = DINOv2BackboneExpanded(name="dinov2_vitb14_reg4", n_splits=n_splits)
+    backbone = DINOv2BackboneExpanded(name=config["model"]["name"], n_splits=config["model"]["n_splits"])
     net = ProtoDINO(backbone=backbone,
                     pooling_method=config["model"]["pooling_method"],
                     cls_head=config["model"]["cls_head"], dim=backbone.dim)
