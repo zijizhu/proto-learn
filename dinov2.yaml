@@ -1,0 +1,12 @@
+model:
+  pooling_method: "avg"
+  cls_head: "sa"
+dataset:
+  augmentation: false
+optim:
+  epochs: 100
+  fc_start_epoch: 10
+  backbone_lr: 0.005
+  fc_lr: 0.05
+debug:
+  epochs: [0, 5, 10, 15, 20, 25]

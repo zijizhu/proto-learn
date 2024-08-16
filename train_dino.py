@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+import os
+import sys
+if __name__ == "__main__":
+    sys.path.append(os.path.join(os.path.dirname(__file__), "dinov2"))
 import logging
 from collections import defaultdict
 from logging import Logger
@@ -14,9 +18,11 @@ from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from models.dino import ProtoDINO
+from models.backbone import DINOv2BackboneExpanded
 from cub_dataset import CUBDataset
 from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
 from utils.config import setup_config_and_logging
+from models.utils import get_cosine_schedule_with_warmup
 
 
 def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataLoader, epoch: int,
@@ -110,16 +116,17 @@ def main():
                               attribute_labels_path.as_posix(),
                               transforms=transforms)
 
-    dataloader_train = DataLoader(dataset=dataset_train, batch_size=80, num_workers=8, shuffle=True)
-    dataloader_test = DataLoader(dataset=dataset_test, batch_size=100, num_workers=8, shuffle=True)
+    dataloader_train = DataLoader(dataset=dataset_train, batch_size=128, num_workers=8, shuffle=True)
+    dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=8, shuffle=True)
 
-    train_fc = config["model"]["cls_head"] == "fc"
-    net = ProtoDINO(pooling_method=config["model"]["pooling_method"], cls_head=config["model"]["cls_head"])
+    train_fc = config["model"]["cls_head"] in ["fc", "sa"]
+    dinov2_vits14_reg4_expanded = DINOv2BackboneExpanded(name="dinov2_vits14_reg4", n_expansions=2)
+    net = ProtoDINO(backbone=dinov2_vits14_reg4_expanded, pooling_method=config["model"]["pooling_method"], cls_head=config["model"]["cls_head"], dim=384)
     for params in net.parameters():
         params.requires_grad = False
     
-    optimizer = optim.Adam(net.fc.parameters(), lr=config["optim"]["fc_lr"]) if train_fc else None
-    scheduler = optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=30) if train_fc else None
+    optimizer = None
+    scheduler = None
     criterion = nn.CrossEntropyLoss() if train_fc else None
     
     net.to(device)
@@ -130,9 +137,15 @@ def main():
     for epoch in range(config["optim"]["epochs"]):
         epoch_train_fc = train_fc and (epoch >= fc_start_epoch)
         if train_fc and (epoch == fc_start_epoch):
+            print("start fine-tuning")
             net.freeze_prototypes = True
-            for params in net.fc.parameters():
-                params.requires_grad = True
+            net.sa.requires_grad = True
+            net.backbone.set_requires_grad()
+            optimizer = optim.SGD([
+                {'params': net.backbone.parameters(), 'lr': config["optim"]["backbone_lr"]},
+                {'params': net.sa, 'lr': config["optim"]["fc_lr"]}
+            ], momentum=0.9)
+            scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=500)
 
         debug = epoch in config["debug"]["epochs"]
 

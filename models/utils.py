@@ -1,7 +1,51 @@
-import torch
-import torch.nn.functional as F
+import math
+import re
 from abc import ABC
+from functools import partial
+
+import numpy as np
+import torch
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LambdaLR
+import torch.nn.functional as F
 from torch import nn
+
+
+def block_expansion_dino(state_dict: dict[str, torch.Tensor], n_splits: int = 3):
+    """Perform Block Expansion on a ViT described in https://arxiv.org/abs/2404.17245"""
+    block_keys = set(re.search("^blocks.(\d+).", key).group(0) for key in state_dict if key.startswith("blocks."))
+    n_blocks = len(block_keys)
+    
+    block_indices = np.arange(0, n_blocks).reshape((n_splits, -1,))
+    block_indices = np.concatenate([block_indices, block_indices[:, -1:]], axis=-1)
+    
+    n_splits, n_block_per_split = block_indices.shape
+    new_block_indices = list((i + 1) * n_block_per_split - 1 for i in range(n_splits))
+    
+    expanded_state_dict = dict()
+    learnable_param_names = []
+    
+    for dst_idx, src_idx in enumerate(block_indices.flatten()):
+        src_keys = [k for k in state_dict if f"blocks.{src_idx}" in k]
+        dst_keys = [k.replace(f"blocks.{src_idx}", f"blocks.{dst_idx}") for k in src_keys]
+        
+        block_state_dict = dict()
+        
+        for src_k, dst_k in zip(src_keys, dst_keys):
+            if ("mlp.fc2" in dst_k or "attn.proj" in dst_k) and (dst_idx in new_block_indices):
+                block_state_dict[dst_k] = torch.zeros_like(state_dict[src_k])
+            else:
+                block_state_dict[dst_k] = state_dict[src_k]
+
+        expanded_state_dict.update(block_state_dict)
+
+        if dst_idx in new_block_indices:
+            learnable_param_names += dst_keys
+
+    expanded_state_dict.update({k: v for k, v in state_dict.items() if "block" not in k})
+    
+    return expanded_state_dict, len(block_indices.flatten()), learnable_param_names
+
 
 
 def l2_conv(x: torch.Tensor, weight: torch.Tensor, stride: int):
@@ -191,3 +235,46 @@ class PixelPrototypeCELoss(nn.Module, ABC):
         # pred = F.interpolate(input=seg, size=(h, w), mode='bilinear', align_corners=True)
         loss = self.seg_criterion(pred, target)
         return loss
+
+
+def _get_cosine_schedule_with_warmup_lr_lambda(
+    current_step: int, *, num_warmup_steps: int, num_training_steps: int, num_cycles: float
+):
+    if current_step < num_warmup_steps:
+        return float(current_step) / float(max(1, num_warmup_steps))
+    progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
+    return max(0.0, 0.5 * (1.0 + math.cos(math.pi * float(num_cycles) * 2.0 * progress)))
+
+
+def get_cosine_schedule_with_warmup(
+    optimizer: Optimizer, num_warmup_steps: int, num_training_steps: int, num_cycles: float = 0.5, last_epoch: int = -1
+):
+    """
+    Create a schedule with a learning rate that decreases following the values of the cosine function between the
+    initial lr set in the optimizer to 0, after a warmup period during which it increases linearly between 0 and the
+    initial lr set in the optimizer.
+
+    Args:
+        optimizer ([`~torch.optim.Optimizer`]):
+            The optimizer for which to schedule the learning rate.
+        num_warmup_steps (`int`):
+            The number of steps for the warmup phase.
+        num_training_steps (`int`):
+            The total number of training steps.
+        num_cycles (`float`, *optional*, defaults to 0.5):
+            The number of waves in the cosine schedule (the defaults is to just decrease from the max value to 0
+            following a half-cosine).
+        last_epoch (`int`, *optional*, defaults to -1):
+            The index of the last epoch when resuming training.
+
+    Return:
+        `torch.optim.lr_scheduler.LambdaLR` with the appropriate schedule.
+    """
+
+    lr_lambda = partial(
+        _get_cosine_schedule_with_warmup_lr_lambda,
+        num_warmup_steps=num_warmup_steps,
+        num_training_steps=num_training_steps,
+        num_cycles=num_cycles,
+    )
+    return LambdaLR(optimizer, lr_lambda, last_epoch)

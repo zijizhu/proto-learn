@@ -1,16 +1,64 @@
+from functools import partial
 from math import sqrt
 
 import torch
 from einops import rearrange
 from torch import nn
 
+from dinov2.layers.block import Block, MemEffAttention
+from dinov2.models.vision_transformer import DinoVisionTransformer
 
-class DINOv2Backbone(nn.Module):
-    def __init__(self, name: str = "dinov2_vitb14_reg") -> None:
+from .utils import block_expansion_dino
+
+
+common_kwargs = dict(
+    img_size=518,
+    patch_size=14,
+    mlp_ratio=4,
+    init_values=1.0,
+    ffn_layer="mlp",
+    block_chunks=0,
+    num_register_tokens=4,
+    interpolate_antialias=True,
+    interpolate_offset=0.0,
+    block_fn=partial(Block, attn_class=MemEffAttention)
+)
+
+vit_small_kwargs = dict(embed_dim=384, num_heads=6)
+vit_base_kwargs = dict(embed_dim=768, num_heads=12)
+
+MODEL_DICT = {
+    "dinov2_vits14_reg4": partial(DinoVisionTransformer, **vit_small_kwargs, **common_kwargs),
+    "dinov2_vitb14_reg4": partial(DinoVisionTransformer, **vit_base_kwargs, **common_kwargs)
+}
+
+URL_DICT = {
+    "dinov2_vits14_reg4": "https://dl.fbaipublicfiles.com/dinov2/dinov2_vits14/dinov2_vits14_reg4_pretrain.pth",
+    "dinov2_vitb14_reg4": "https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_reg4_pretrain.pth"
+}
+
+
+class DINOv2BackboneExpanded(nn.Module):
+    def __init__(self, name: str = "dinov2_vitb14_reg", n_expansions: int = 0) -> None:
         super().__init__()
-        self.dino = torch.hub.load('facebookresearch/dinov2', name)
+        if n_expansions > 0:
+            arch = MODEL_DICT[name]
+            state_dict = torch.hub.load_state_dict_from_url(URL_DICT[name], map_location="cpu")
+            expanded_state_dict, n_blocks, learnable_param_names = block_expansion_dino(
+                state_dict=state_dict,
+                n_splits=n_expansions)
+            self.dino = arch(depth=n_blocks)
+            self.dino.load_state_dict(expanded_state_dict)
+            self.learnable_param_names = learnable_param_names
+        else:
+            self.dino = torch.hub.load('facebookresearch/dinov2', name)  # type: nn.Module
+            self.learnable_param_names = list(name for name, _ in self.dino.named_parameters())
     
-    def forward(self, x: torch.Tensor, key: str = "x_norm_patch_tokens", reshape: bool = True) -> torch.Tensor:
+    def set_requires_grad(self):
+        for name, param in self.dino.named_parameters():
+                param.requires_grad = name in self.learnable_param_names
+
+    def forward(self, x: torch.Tensor, key: str = "x_norm_patchtokens", reshape: bool = False) -> torch.Tensor:
         feature_dict = self.dino.forward_features(x)  # type: dict[str, torch.Tensor]
         feature = feature_dict[key]
         
@@ -40,12 +88,5 @@ def load_backbone(backbone_name: str) -> tuple[nn.Module, int]:
         from torchvision.models import DenseNet121_Weights, densenet121
         backbone = densenet121(weights=DenseNet121_Weights.DEFAULT)
         return backbone.features, 1024
-    elif "dinov2" in backbone_name:
-        assert backbone_name in ["dinov2_vitb14_reg"]
-        name_to_dim = {
-            "dinov2_vitb14_reg": 768
-        }
-        backbone = DINOv2Backbone(name=backbone_name)
-        return backbone, name_to_dim[backbone_name]
     else:
         raise NotImplementedError
