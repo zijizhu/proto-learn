@@ -75,6 +75,8 @@ class DINOv2BackboneExpanded(nn.Module):
             self.dino = arch(depth=n_blocks)
             self.dino.load_state_dict(expanded_state_dict)
             self.learnable_param_names = learnable_param_names
+            for name, param in self.dino.named_parameters():
+                param.requires_grad = name in learnable_param_names
         else:
             self.dino = torch.hub.load('facebookresearch/dinov2', name)  # type: nn.Module
             self.learnable_param_names = list(name for name, _ in self.dino.named_parameters())
