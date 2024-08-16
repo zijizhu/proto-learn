@@ -1,5 +1,5 @@
 model:
-  pooling_method: "avg"
+  pooling_method: "max"
   cls_head: "sum"
 dataset:
   augmentation: false

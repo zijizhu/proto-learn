@@ -23,7 +23,7 @@ def block_expansion_dino(state_dict: dict[str, torch.Tensor], n_splits: int = 3)
     new_block_indices = list((i + 1) * n_block_per_split - 1 for i in range(n_splits))
     
     expanded_state_dict = dict()
-    learnable_param_names = []
+    learnable_param_names, zero_param_names = [], []
     
     for dst_idx, src_idx in enumerate(block_indices.flatten()):
         src_keys = [k for k in state_dict if f"blocks.{src_idx}" in k]
@@ -34,6 +34,7 @@ def block_expansion_dino(state_dict: dict[str, torch.Tensor], n_splits: int = 3)
         for src_k, dst_k in zip(src_keys, dst_keys):
             if ("mlp.fc2" in dst_k or "attn.proj" in dst_k) and (dst_idx in new_block_indices):
                 block_state_dict[dst_k] = torch.zeros_like(state_dict[src_k])
+                zero_param_names.append(dst_k)
             else:
                 block_state_dict[dst_k] = state_dict[src_k]
 
@@ -44,7 +45,7 @@ def block_expansion_dino(state_dict: dict[str, torch.Tensor], n_splits: int = 3)
 
     expanded_state_dict.update({k: v for k, v in state_dict.items() if "block" not in k})
     
-    return expanded_state_dict, len(block_indices.flatten()), learnable_param_names
+    return expanded_state_dict, len(block_indices.flatten()), learnable_param_names, zero_param_names
 
 
 

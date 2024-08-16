@@ -37,11 +37,17 @@ URL_DICT = {
     "dinov2_vitb14_reg4": "https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_reg4_pretrain.pth"
 }
 
+DIM_DICT = {
+    "dinov2_vits14_reg4": 384,
+    "dinov2_vitb14_reg4": 768
+}
+
 
 class DINOv2Backbone(nn.Module):
     def __init__(self, name: str = "dinov2_vitb14_reg"):
         super().__init__()
         self.dino = torch.hub.load("facebookresearch/dinov2", name)
+        self.dim = DIM_DICT[name]
 
     def forward(self, x: torch.Tensor, key: str = "x_norm_patchtokens", reshape: bool = False) -> torch.Tensor:
         feature_dict = self.dino.forward_features(x)  # type: dict[str, torch.Tensor]
@@ -57,20 +63,28 @@ class DINOv2Backbone(nn.Module):
 
 
 class DINOv2BackboneExpanded(nn.Module):
-    def __init__(self, name: str = "dinov2_vitb14_reg", n_expansions: int = 0):
+    def __init__(self, name: str = "dinov2_vitb14_reg", n_splits: int = 0):
         super().__init__()
-        if n_expansions > 0:
+        self.dim = DIM_DICT[name]
+        if n_splits > 0:
             arch = MODEL_DICT[name]
             state_dict = torch.hub.load_state_dict_from_url(URL_DICT[name], map_location="cpu")
-            expanded_state_dict, n_blocks, learnable_param_names = block_expansion_dino(
+            expanded_state_dict, n_blocks, learnable_param_names, zero_param_names = block_expansion_dino(
                 state_dict=state_dict,
-                n_splits=n_expansions)
+                n_splits=n_splits)
             self.dino = arch(depth=n_blocks)
             self.dino.load_state_dict(expanded_state_dict)
             self.learnable_param_names = learnable_param_names
         else:
             self.dino = torch.hub.load('facebookresearch/dinov2', name)  # type: nn.Module
             self.learnable_param_names = list(name for name, _ in self.dino.named_parameters())
+        self._check()
+    
+    def _check(self):
+        print("Learnable parameters:")
+        for name, param in self.dino.named_parameters():
+            if param.requires_grad:
+                print(name, "(zero-ed)" if param.detach().sum() == 0 else "")
     
     def set_requires_grad(self):
         for name, param in self.dino.named_parameters():
