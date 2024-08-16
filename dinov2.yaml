@@ -1,10 +1,10 @@
 model:
   pooling_method: "avg"
-  cls_head: "sa"
+  cls_head: "sum"
 dataset:
   augmentation: false
 optim:
-  epochs: 100
+  epochs: 20
   fc_start_epoch: 10
   backbone_lr: 0.005
   fc_lr: 0.05

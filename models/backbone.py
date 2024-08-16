@@ -38,8 +38,26 @@ URL_DICT = {
 }
 
 
+class DINOv2Backbone(nn.Module):
+    def __init__(self, name: str = "dinov2_vitb14_reg"):
+        super().__init__()
+        self.dino = torch.hub.load("facebookresearch/dinov2", name)
+
+    def forward(self, x: torch.Tensor, key: str = "x_norm_patchtokens", reshape: bool = False) -> torch.Tensor:
+        feature_dict = self.dino.forward_features(x)  # type: dict[str, torch.Tensor]
+        feature = feature_dict[key]
+        
+        B, n_patches, dim = feature.shape
+
+        if reshape and key == "x_norm_patch_tokens":
+            H = W = int(sqrt(n_patches))
+            feature = rearrange(feature, "B (H W) dim -> B dim H W", H=H, W=W)
+        
+        return feature
+
+
 class DINOv2BackboneExpanded(nn.Module):
-    def __init__(self, name: str = "dinov2_vitb14_reg", n_expansions: int = 0) -> None:
+    def __init__(self, name: str = "dinov2_vitb14_reg", n_expansions: int = 0):
         super().__init__()
         if n_expansions > 0:
             arch = MODEL_DICT[name]

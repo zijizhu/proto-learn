@@ -18,7 +18,7 @@ from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from models.dino import ProtoDINO
-from models.backbone import DINOv2BackboneExpanded
+from models.backbone import DINOv2Backbone, DINOv2BackboneExpanded
 from cub_dataset import CUBDataset
 from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
 from utils.config import setup_config_and_logging
@@ -120,8 +120,9 @@ def main():
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=8, shuffle=True)
 
     train_fc = config["model"]["cls_head"] in ["fc", "sa"]
-    dinov2_vits14_reg4_expanded = DINOv2BackboneExpanded(name="dinov2_vits14_reg4", n_expansions=2)
-    net = ProtoDINO(backbone=dinov2_vits14_reg4_expanded, pooling_method=config["model"]["pooling_method"], cls_head=config["model"]["cls_head"], dim=384)
+    # dinov2_vits14_reg4_expanded = DINOv2BackboneExpanded(name="dinov2_vits14_reg4", n_expansions=2)
+    backbone = DINOv2Backbone("dinov2_vitb14_reg")
+    net = ProtoDINO(backbone=backbone, pooling_method=config["model"]["pooling_method"], cls_head=config["model"]["cls_head"], dim=384)
     for params in net.parameters():
         params.requires_grad = False
     
