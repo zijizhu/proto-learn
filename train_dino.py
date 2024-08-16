@@ -145,10 +145,11 @@ def main():
         if train_fc and (epoch == fc_start_epoch):
             print("start fine-tuning")
             net.freeze_prototypes = True
-            net.sa.requires_grad = True
+            if config["model"]["cls_head"] == "sa":
+                net.sa.requires_grad = True
             net.backbone.set_requires_grad()
             
-            param_groups = [{'params': filter(net.backbone.parameters(), lambda p: p.requires_grad), 'lr': config["optim"]["backbone_lr"]}]
+            param_groups = [{'params': filter(lambda p: p.requires_grad, net.backbone.parameters()), 'lr': config["optim"]["backbone_lr"]}]
             param_groups += [{'params': net.sa, 'lr': config["optim"]["fc_lr"]}] if config["model"]["cls_head"] == "sa" else []
             optimizer = optim.SGD(param_groups, momentum=0.9)
             scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=47 * 10, num_training_steps=47 * 80)
