@@ -93,7 +93,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    config, log_dir = setup_config_and_logging()
+    config, log_dir = setup_config_and_logging(base_log_dir="logs_new")
 
     logger = logging.getLogger(__name__)
 
@@ -153,7 +153,9 @@ def main():
             param_groups += [{'params': net.sa, 'lr': config["optim"]["fc_lr"]}] if config["model"]["cls_head"] == "sa" else []
             optimizer = optim.SGD(param_groups, momentum=0.9)
             if config["optim"]["scheduler"] == "cosine":
-                scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=47 * 10, num_training_steps=47 * 80)
+                scheduler = get_cosine_schedule_with_warmup(optimizer,
+                                                            num_warmup_steps=int(len(dataset_train) / 128) * config["optim"]["fc_start_epoch"],
+                                                            num_training_steps=47 * config["optim"]["epochs"])
             else:
                 scheduler = None
 
@@ -178,7 +180,7 @@ def main():
         if epoch_acc_val > best_val_acc:
             best_val_acc = epoch_acc_val
             best_epoch = epoch
-            torch.save({k: v.cpu() for k, v in net.state_dict().items()}, "dino_v2_proto.pth")
+            torch.save({k: v.cpu() for k, v in net.state_dict().items()}, log_dir / "dino_v2_proto.pth")
             logger.info("Best epoch found, model saved!")
 
     logger.info(f"DONE! Best epoch is epoch {best_epoch} with accuracy {best_val_acc}.")
