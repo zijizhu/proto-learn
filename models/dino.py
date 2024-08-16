@@ -27,7 +27,7 @@ class ProtoDINO(nn.Module):
         self.backbone = backbone
 
         self.dim = dim
-        self.register_buffer("prototypes", torch.zeros(self.C, self.n_prototypes, self.dim))
+        self.register_buffer("prototypes", torch.empty(self.C, self.n_prototypes, self.dim))
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
         
@@ -44,7 +44,7 @@ class ProtoDINO(nn.Module):
             self.sa = None
         elif cls_head == "sa":
             self.fc = None
-            self.sa = nn.Parameter(torch.ones((self.n_classes, self.n_prototypes,), dtype=torch.float32))
+            self.sa = nn.Parameter(torch.full((self.n_classes, self.n_prototypes,), 0.5, dtype=torch.float32))
         else:
             self.fc = None
             self.sa = None
