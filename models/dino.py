@@ -23,15 +23,16 @@ class ProtoDINO(nn.Module):
         self.C = n_classes + 1
         self.pca_fg_threshold = pca_fg_threshold
         self.backbone = backbone
-        self.neck = nn.Linear(768, 768)
+        self.neck = neck
 
         self.metric = metric
         self.dim = dim
         self.register_buffer("prototypes", torch.empty(self.C, self.n_prototypes, self.dim))
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
-        nn.init.zeros_(self.neck.weight)
-        nn.init.zeros_(self.neck.bias)
+        for param in self.neck.parameters():
+            nn.init.zeros_(param)
+            nn.init.zeros_(param)
         
         self.pretrain_prototypes = True
         

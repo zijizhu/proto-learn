@@ -2,11 +2,8 @@
 
 set -x
 
-python train_dino.py --config_path experiments_new/vitb14-cosine.yaml
-python train_dino.py --config_path experiments_new/vitb14-lr_005.yaml
-python train_dino.py --config_path experiments_new/vitb14-lr_01.yaml
-python train_dino.py --config_path experiments_new/vitb14-n_split_2-cosine.yaml
-python train_dino.py --config_path experiments_new/vitb14-n_split_2.yaml
-python train_dino.py --config_path experiments_new/vitb14-n_split_3-cosine.yaml
-python train_dino.py --config_path experiments_new/vitb14-n_split_3.yaml
-python train_dino.py --config_path experiments_new/vitb14-aug.yaml
+python train_dino.py --config_path experiments_new/vitb14-proj1.yaml
+python train_dino.py --config_path experiments_new/vitb14-proj2.yaml
+python train_dino.py --config_path experiments_new/vitb14-proj3.yaml
+python train_dino.py --config_path experiments_new/vitb14-proj4.yaml
+python train_dino.py --config_path experiments_new/vitb14-proj5.yaml

@@ -124,3 +124,34 @@ def load_backbone(backbone_name: str) -> tuple[nn.Module, int]:
         return backbone.features, 1024
     else:
         raise NotImplementedError
+    
+
+def load_projection(name: int):
+    if name == 1:
+        nn.Sequential(
+            nn.Linear(768, 384),
+            nn.ReLU(),
+            nn.Linear(384, 768)
+        )
+    elif name == 2:
+        nn.Sequential(
+            nn.Linear(768, 384),
+            nn.Linear(384, 768)
+        )
+    elif name == 3:
+        nn.Sequential(
+            nn.Linear(768, 768),
+            nn.Linear(768, 768)
+        )
+    elif name == 4:
+        nn.Sequential(
+            nn.Linear(768, 768),
+            nn.ReLU(),
+            nn.Linear(768, 768)
+        )
+    elif name == 5:
+        nn.Sequential(
+            nn.Linear(768, 768),
+            nn.LeakyReLU(),
+            nn.Linear(768, 768)
+        )

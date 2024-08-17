@@ -18,7 +18,7 @@ from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from models.dino import ProtoDINO, ProtoPNetLoss
-from models.backbone import DINOv2BackboneExpanded
+from models.backbone import DINOv2BackboneExpanded, load_projection
 from cub_dataset import CUBDataset
 from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
 from utils.config import setup_config_and_logging
@@ -120,9 +120,10 @@ def main():
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=8, shuffle=True)
 
     n_splits = 1
+    neck = load_projection(config["model"])
     backbone = DINOv2BackboneExpanded(name=config["model"]["name"], n_splits=config["model"]["n_splits"])
     net = ProtoDINO(backbone=backbone,
-                    neck=None,
+                    neck=neck,
                     pooling_method=config["model"]["pooling_method"],
                     cls_head=config["model"]["cls_head"], dim=backbone.dim)
 
@@ -149,7 +150,6 @@ def main():
             net.freeze_prototypes = True
             if config["model"]["cls_head"] == "sa":
                 net.sa.requires_grad = True
-            # net.backbone.set_requires_grad()
             for param in net.neck.parameters():
                 param.requires_grad = True
             

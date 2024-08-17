@@ -1,6 +1,7 @@
 model:
   name: "dinov2_vitb14_reg4"
   n_splits: 0
+  proj: 3
   pooling_method: "max"
   cls_head: "sum"
 dataset:
@@ -8,7 +9,7 @@ dataset:
 optim:
   epochs: 60
   fc_start_epoch: 10
-  backbone_lr: 0.005
+  backbone_lr: 0.001
   fc_lr: 1e-6
   scheduler: null
 debug:

@@ -4,7 +4,7 @@ model:
 dataset:
   augmentation: false
 optim:
-  epochs: 50
+  epochs: 60
   fc_start_epoch: 10
   fc_lr: 0.005
 debug:
