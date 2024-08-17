@@ -132,7 +132,7 @@ def main():
     train_fc = (config["model"]["cls_head"] in ["fc", "sa"]) or n_splits > 0
     optimizer = None
     scheduler = None
-    criterion = ProtoPNetLoss(l_clst_coef=0.08, l_sep_coef=-0.008, l_l1_coef=0) if train_fc else None
+    criterion = ProtoPNetLoss(l_clst_coef=-0.08, l_sep_coef=0.008, l_l1_coef=0) if train_fc else None
     
     net.backbone._check()
     
@@ -149,6 +149,8 @@ def main():
             if config["model"]["cls_head"] == "sa":
                 net.sa.requires_grad = True
             # net.backbone.set_requires_grad()
+            for param in net.neck.parameters():
+                param.requires_grad = True
             
             param_groups = [{'params': net.neck.parameters(), 'lr': config["optim"]["backbone_lr"]}]
             param_groups += [{'params': net.sa, 'lr': config["optim"]["fc_lr"]}] if config["model"]["cls_head"] == "sa" else []
