@@ -145,7 +145,7 @@ class ProtoDINO(nn.Module):
             image_prototype_logits = patch_prototype_logits.mean(1)  # shape: [B, C, K,], C=n_classes+1
         
         # Remove background logits
-        image_prototype_logits = image_prototype_logits[:, :-1, :]
+        # image_prototype_logits = image_prototype_logits[:, :-1, :]
         
         if self.cls_head == "sa":
             sa_weights = F.softmax(self.sa, dim=-1) * self.n_prototypes
@@ -159,6 +159,8 @@ class ProtoDINO(nn.Module):
             class_logits = image_prototype_logits.mean(-1)  # shape: [B, C,]
         else:
             class_logits = image_prototype_logits.sum(-1)  # shape: [B, C,]
+
+        class_logits = class_logits[:, :-1]
 
         outputs =  dict(
             patch_prototype_logits=patch_prototype_logits,  # shape: [B, n_patches, C, K,]
@@ -189,7 +191,7 @@ class ProtoPNetLoss(nn.Module):
                 # proto_class_association: torch.Tensor,
                 # fc_weights: torch.Tensor):
         logits, dists = outputs["class_logits"], outputs["image_prototype_logits"]
-        _, labels, _ = batch
+        _, labels, _, _ = batch
 
         loss_dict = dict()
         loss_dict["l_y"] = self.xe(logits, labels)
@@ -209,7 +211,7 @@ class ProtoPNetLoss(nn.Module):
 
     @staticmethod
     def compute_costs(l2_dists: torch.Tensor, labels: torch.Tensor):
-        positives = F.one_hot(labels, num_classes=200)
+        positives = F.one_hot(labels, num_classes=201)
         negatives = 1 - positives
         cluster_cost = torch.mean(l2_dists.max(-1) * positives)
         separation_cost = torch.mean(l2_dists.max(-1) * negatives)
