@@ -39,7 +39,7 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
 
         if criterion is not None and optimizer is not None:
             loss_dict = criterion(outputs, batch)
-            loss = sum(val for key, val in loss_dict.items() if not not key.startswith("_"))
+            loss = sum(val for key, val in loss_dict.items() if not key.startswith("_"))
             
             loss.backward()
             optimizer.step()
@@ -132,7 +132,8 @@ def main():
     train_fc = (config["model"]["cls_head"] in ["fc", "sa"]) or n_splits > 0
     optimizer = None
     scheduler = None
-    criterion = ProtoPNetLoss(l_clst_coef=-0.08, l_sep_coef=0.008, l_l1_coef=0) if train_fc else None
+    # criterion = ProtoPNetLoss(l_clst_coef=-0.08, l_sep_coef=0.008, l_l1_coef=0) if train_fc else None
+    criterion = ProtoPNetLoss(l_clst_coef=0, l_sep_coef=0, l_l1_coef=0) if train_fc else None
     
     net.backbone._check()
     

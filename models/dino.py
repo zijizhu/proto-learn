@@ -116,16 +116,17 @@ class ProtoDINO(nn.Module):
         assert (not self.training) or (labels is not None)
         
         patch_tokens = self.backbone(x)  # shape: [B, n_pathes, dim,]
-        patch_tokens = patch_tokens + self.neck(patch_tokens)
 
         patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
         prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
+        patch_tokens_updated = patch_tokens_norm + self.neck(patch_tokens_norm)
+
         if self.metric == "l2":
-            patch_prototype_dists = torch.cdist(patch_tokens_norm, rearrange(self.prototypes, "C K dim -> (C K) dim"), p=2)
+            patch_prototype_dists = torch.cdist(patch_tokens_updated, rearrange(self.prototypes, "C K dim -> (C K) dim"), p=2)
             patch_prototype_logits = dist_to_similarity(patch_prototype_dists)
             patch_prototype_logits = rearrange(patch_prototype_logits, "B n_patches (C K) -> B n_patches C K", C=self.C, K=self.n_prototypes)
         elif self.metric == "cos":
-            patch_prototype_logits = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
+            patch_prototype_logits = einsum(patch_tokens_updated, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
         
         if labels is not None:
             pseudo_patch_labels = self.get_pseudo_patch_labels(patch_tokens.detach(), labels=labels)
@@ -152,7 +153,7 @@ class ProtoDINO(nn.Module):
             image_prototype_logits_weighted = image_prototype_logits[:, :-1, :] * sa_weights
             class_logits = image_prototype_logits_weighted.sum(-1)
         elif self.cls_head == "fc":
-            image_prototype_logits_flat = rearrange(image_prototype_logits,
+            image_prototype_logits_flat = rearrange(image_prototype_logits[:, :-1, :],
                                                     "B n_classes K -> B (n_classes K)")
             class_logits = self.fc(image_prototype_logits_flat.detach())  # shape: [B, n_classes,]
         elif self.cls_head == "mean":

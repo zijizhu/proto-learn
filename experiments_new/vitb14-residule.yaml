@@ -2,7 +2,7 @@ model:
   name: "dinov2_vitb14_reg4"
   n_splits: 0
   pooling_method: "max"
-  cls_head: "sa"
+  cls_head: "sum"
 dataset:
   augmentation: false
 optim:
