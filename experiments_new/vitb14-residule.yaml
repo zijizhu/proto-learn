@@ -1,0 +1,15 @@
+model:
+  name: "dinov2_vitb14_reg4"
+  n_splits: 0
+  pooling_method: "max"
+  cls_head: "sa"
+dataset:
+  augmentation: false
+optim:
+  epochs: 50
+  fc_start_epoch: 20
+  backbone_lr: 0.005
+  fc_lr: 1e-6
+  scheduler: null
+debug:
+  epochs: [0, 5, 10, 15, 20, 40, 60, 80, 100, 130, 160]

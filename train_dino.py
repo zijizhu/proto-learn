@@ -17,8 +17,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
-from models.dino import ProtoDINO
-from models.backbone import DINOv2Backbone, DINOv2BackboneExpanded
+from models.dino import ProtoDINO, ProtoPNetLoss
+from models.backbone import DINOv2BackboneExpanded
 from cub_dataset import CUBDataset
 from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
 from utils.config import setup_config_and_logging
@@ -38,7 +38,7 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
         outputs = model(images, labels=labels, debug=True, use_gumbel=False)
 
         if criterion is not None and optimizer is not None:
-            loss = criterion(outputs["class_logits"], labels)
+            loss = criterion(outputs, batch)
             loss_dict = dict(xe=loss.detach())
             
             loss.backward()
@@ -122,6 +122,7 @@ def main():
     n_splits = 1
     backbone = DINOv2BackboneExpanded(name=config["model"]["name"], n_splits=config["model"]["n_splits"])
     net = ProtoDINO(backbone=backbone,
+                    neck=None,
                     pooling_method=config["model"]["pooling_method"],
                     cls_head=config["model"]["cls_head"], dim=backbone.dim)
 
@@ -131,7 +132,7 @@ def main():
     train_fc = (config["model"]["cls_head"] in ["fc", "sa"]) or n_splits > 0
     optimizer = None
     scheduler = None
-    criterion = nn.CrossEntropyLoss() if train_fc else None
+    criterion = ProtoPNetLoss(l_clst_coef=0.08, l_sep_coef=-0.008, l_l1_coef=0) if train_fc else None
     
     net.backbone._check()
     
@@ -147,9 +148,9 @@ def main():
             net.freeze_prototypes = True
             if config["model"]["cls_head"] == "sa":
                 net.sa.requires_grad = True
-            net.backbone.set_requires_grad()
+            # net.backbone.set_requires_grad()
             
-            param_groups = [{'params': filter(lambda p: p.requires_grad, net.backbone.parameters()), 'lr': config["optim"]["backbone_lr"]}]
+            param_groups = [{'params': net.neck.parameters(), 'lr': config["optim"]["backbone_lr"]}]
             param_groups += [{'params': net.sa, 'lr': config["optim"]["fc_lr"]}] if config["model"]["cls_head"] == "sa" else []
             optimizer = optim.SGD(param_groups, momentum=0.9)
             if config["optim"]["scheduler"] == "cosine":

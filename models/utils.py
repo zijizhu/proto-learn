@@ -10,6 +10,12 @@ from torch.optim.lr_scheduler import LambdaLR
 import torch.nn.functional as F
 from torch import nn
 
+def dist_to_similarity(distances: torch.Tensor, log_activation: bool = True, eps: float = 1e-4):
+    if log_activation:
+        return torch.log((distances + 1) / (distances + eps))
+    else:
+        return -distances
+
 
 def block_expansion_dino(state_dict: dict[str, torch.Tensor], n_splits: int = 3):
     """Perform Block Expansion on a ViT described in https://arxiv.org/abs/2404.17245"""

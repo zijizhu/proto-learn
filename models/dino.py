@@ -6,17 +6,15 @@ import torch.nn.functional as F
 from einops import rearrange, repeat, einsum
 from torch import nn
 
-from models.utils import (
-    sinkhorn_knopp,
-    momentum_update,
-)
+from models.utils import sinkhorn_knopp, momentum_update, dist_to_similarity
 
 class ProtoDINO(nn.Module):
     """
     deep high-resolution representation learning for human pose estimation, CVPR2019
     """
 
-    def __init__(self, backbone: nn.Module, pooling_method: str, cls_head: str, *, gamma: float = 0.99, n_prototypes: int = 5, n_classes: int = 200,
+    def __init__(self, backbone: nn.Module, neck: nn.Module | None, pooling_method: str, cls_head: str,
+                 *, metric: str = "l2", gamma: float = 0.99, n_prototypes: int = 5, n_classes: int = 200,
                  pca_fg_threshold: float = 0.5, dim: int = 768):
         super().__init__()
         self.gamma = gamma
@@ -25,11 +23,15 @@ class ProtoDINO(nn.Module):
         self.C = n_classes + 1
         self.pca_fg_threshold = pca_fg_threshold
         self.backbone = backbone
+        self.neck = nn.Linear(768, 768)
 
+        self.metric = metric
         self.dim = dim
         self.register_buffer("prototypes", torch.empty(self.C, self.n_prototypes, self.dim))
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
+        nn.init.zeros_(self.neck.weight)
+        nn.init.zeros_(self.neck.bias)
         
         self.pretrain_prototypes = True
         
@@ -114,10 +116,16 @@ class ProtoDINO(nn.Module):
         assert (not self.training) or (labels is not None)
         
         patch_tokens = self.backbone(x)  # shape: [B, n_pathes, dim,]
+        patch_tokens = patch_tokens + self.neck(patch_tokens)
 
         patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
         prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
-        patch_prototype_logits = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
+        if self.metric == "l2":
+            patch_prototype_dists = torch.cdist(patch_tokens_norm, rearrange(self.prototypes, "C K dim -> (C K) dim"), p=2)
+            patch_prototype_logits = dist_to_similarity(patch_prototype_dists)
+            patch_prototype_logits = rearrange(patch_prototype_logits, "B n_patches (C K) -> B n_patches C K", C=self.C, K=self.n_prototypes)
+        else:
+            patch_prototype_logits = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
         
         if labels is not None:
             pseudo_patch_labels = self.get_pseudo_patch_labels(patch_tokens.detach(), labels=labels)
@@ -154,6 +162,7 @@ class ProtoDINO(nn.Module):
 
         outputs =  dict(
             patch_prototype_logits=patch_prototype_logits,  # shape: [B, n_patches, C, K,]
+            image_prototype_dists=...,
             image_prototype_logits=image_prototype_logits,  # shape: [B, C, K,]
             class_logits=class_logits,  # shape: [B, n_classes,]
             assignment_masks=assignment_masks  # shape: [B, H, W,]
@@ -165,3 +174,45 @@ class ProtoDINO(nn.Module):
                 outputs.update(debug_dict)
 
         return outputs
+
+
+class ProtoPNetLoss(nn.Module):
+    def __init__(self, l_clst_coef: float, l_sep_coef: float, l_l1_coef: float) -> None:
+        super().__init__()
+        assert l_sep_coef < 0
+        self.l_clst_coef = l_clst_coef
+        self.l_sep_coef = l_sep_coef
+        self.l_l1_coef = l_l1_coef
+        self.xe = nn.CrossEntropyLoss()
+
+    def forward(self, outputs: tuple[torch.Tensor, torch.Tensor],
+                batch: dict[str, torch.Tensor]):
+                # proto_class_association: torch.Tensor,
+                # fc_weights: torch.Tensor):
+        logits, dists = outputs["class_logits"], outputs["image_prototype_dists"]
+        _, labels, _ = batch
+
+        loss_dict = dict()
+        loss_dict["l_y"] = self.xe(logits, labels)
+
+        if self.l_clst_coef != 0 and self.l_sep_coef != 0:
+            l_clst, l_sep = self.compute_costs(dists,labels)
+            loss_dict["l_clst"] = self.l_clst_coef * l_clst
+            loss_dict["l_sep"] = self.l_sep_coef * l_sep
+            loss_dict["_l_clst_raw"] = l_clst
+            loss_dict["_l_sep_raw"] = l_sep
+
+        # if self.l_l1_coef != 0:
+        #     l1_mask = 1 - proto_class_association.T
+        #     l1 = (fc_weights * l1_mask).norm(p=1)
+        #     loss_dict["l_l1"] = self.l_l1_coef * l1
+        return loss_dict
+
+    @staticmethod
+    def compute_costs(l2_dists: torch.Tensor, labels: torch.Tensor):
+        positives = F.one_hot(labels, num_classes=200)
+        negatives = 1 - positives
+        cluster_cost = torch.mean(l2_dists.min(-1) * positives)
+        separation_cost = torch.mean(l2_dists.min(-1) * negatives)
+
+        return cluster_cost, separation_cost
