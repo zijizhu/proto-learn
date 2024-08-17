@@ -38,8 +38,8 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
         outputs = model(images, labels=labels, debug=True, use_gumbel=False)
 
         if criterion is not None and optimizer is not None:
-            loss = criterion(outputs, batch)
-            loss_dict = dict(xe=loss.detach())
+            loss_dict = criterion(outputs, batch)
+            loss = sum(val for key, val in loss_dict.items() if not not key.startswith("_"))
             
             loss.backward()
             optimizer.step()
