@@ -210,9 +210,9 @@ class ProtoPNetLoss(nn.Module):
 
     @staticmethod
     def compute_costs(l2_dists: torch.Tensor, labels: torch.Tensor):
-        positives = F.one_hot(labels, num_classes=201)
+        positives = F.one_hot(labels, num_classes=201).to(dtype=torch.float32)
         negatives = 1 - positives
-        cluster_cost = torch.mean(l2_dists.max(-1) * positives)
-        separation_cost = torch.mean(l2_dists.max(-1) * negatives)
+        cluster_cost = torch.mean(l2_dists.max(-1).values * positives)
+        separation_cost = torch.mean(l2_dists.max(-1).values * negatives)
 
         return cluster_cost, separation_cost
