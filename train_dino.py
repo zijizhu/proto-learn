@@ -120,7 +120,7 @@ def main():
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=8, shuffle=True)
 
     n_splits = 1
-    neck = load_projection(config["model"])
+    neck = load_projection(config["model"]["proj"])
     backbone = DINOv2BackboneExpanded(name=config["model"]["name"], n_splits=config["model"]["n_splits"])
     net = ProtoDINO(backbone=backbone,
                     neck=neck,

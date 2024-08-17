@@ -155,3 +155,5 @@ def load_projection(name: int):
             nn.LeakyReLU(),
             nn.Linear(768, 768)
         )
+    else:
+        raise ValueError
