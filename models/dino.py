@@ -149,7 +149,7 @@ class ProtoDINO(nn.Module):
         
         if self.cls_head == "sa":
             sa_weights = F.softmax(self.sa, dim=-1) * self.n_prototypes
-            image_prototype_logits_weighted = image_prototype_logits * sa_weights
+            image_prototype_logits_weighted = image_prototype_logits[:, :-1, :] * sa_weights
             class_logits = image_prototype_logits_weighted.sum(-1)
         elif self.cls_head == "fc":
             image_prototype_logits_flat = rearrange(image_prototype_logits,
@@ -157,14 +157,13 @@ class ProtoDINO(nn.Module):
             class_logits = self.fc(image_prototype_logits_flat.detach())  # shape: [B, n_classes,]
         elif self.cls_head == "mean":
             class_logits = image_prototype_logits.mean(-1)  # shape: [B, C,]
+            class_logits = class_logits[:, :-1]
         else:
             class_logits = image_prototype_logits.sum(-1)  # shape: [B, C,]
-
-        class_logits = class_logits[:, :-1]
+            class_logits = class_logits[:, :-1]
 
         outputs =  dict(
             patch_prototype_logits=patch_prototype_logits,  # shape: [B, n_patches, C, K,]
-            # image_prototype_dists=...,
             image_prototype_logits=image_prototype_logits,  # shape: [B, C, K,]
             class_logits=class_logits,  # shape: [B, n_classes,]
             assignment_masks=assignment_masks  # shape: [B, H, W,]
