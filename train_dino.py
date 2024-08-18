@@ -120,6 +120,8 @@ def main():
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=8, shuffle=True)
 
     adapter = load_adapter(config["model"]["adapter_config"])
+    if config["model"]["adapter_config"]:
+        print(adapter)
     backbone = DINOv2BackboneExpanded(name=config["model"]["name"], n_splits=config["model"]["n_splits"])
     net = ProtoDINO(backbone=backbone,
                     adapter=adapter,

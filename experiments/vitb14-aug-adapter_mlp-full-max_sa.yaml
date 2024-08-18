@@ -1,0 +1,24 @@
+model:
+  name: "dinov2_vitb14_reg4"
+  tuning: "adapter"
+  n_splits: 0
+  adapter_config: ["768,768", "768,768"]
+  pooling_method: "max"
+  cls_head: "sa"
+  metric: "cos"
+  losses:
+    l_xe_coef: 1
+    l_clst_coef: -1
+    l_sep_coef: 0.8
+    l_l1_coef: 0
+dataset:
+  augmentation: true
+optim:
+  epochs: 10
+  start_epoch: 4
+  backbone_lr: 0.05
+  adapter_lr: 0.01
+  fc_lr: 1e-6
+  scheduler: null
+debug:
+  epochs: [0, 2, 4, 6, 8, 10]
