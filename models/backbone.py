@@ -124,11 +124,11 @@ def load_adapter(config: list[int]):
     pattern = r"^\d+,\d+$"
     layers = []
     for s in config:
-        if re.match(s, pattern):
+        if re.match(pattern=pattern, string=s):
             in_dim, out_dim = s.split(",")
             layers.append(nn.Linear(int(in_dim), int(out_dim)))
         elif s == "relu":
             layers.append(nn.ReLU())
         else:
             raise ValueError
-    return nn.Sequential(layers)
+    return nn.Sequential(*layers)
