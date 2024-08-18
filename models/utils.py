@@ -2,13 +2,15 @@ import math
 import re
 from abc import ABC
 from functools import partial
+from logging import Logger
 
 import numpy as np
 import torch
-from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LambdaLR
 import torch.nn.functional as F
 from torch import nn
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LambdaLR
+
 
 def dist_to_similarity(distances: torch.Tensor, log_activation: bool = True, eps: float = 1e-4):
     if log_activation:
@@ -285,3 +287,10 @@ def get_cosine_schedule_with_warmup(
         num_cycles=num_cycles,
     )
     return LambdaLR(optimizer, lr_lambda, last_epoch)
+
+def print_parameters(net: nn.Module, logger: Logger):
+    logger.info("Learnable parameters:")
+    for name, param in net.named_parameters():
+        if param.requires_grad:
+            msg = name + ("(zero-ed)" if param.detach().sum() == 0 else "")
+            logger.info(msg)

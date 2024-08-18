@@ -13,7 +13,7 @@ class ProtoDINO(nn.Module):
     deep high-resolution representation learning for human pose estimation, CVPR2019
     """
 
-    def __init__(self, backbone: nn.Module, neck: nn.Module | None, pooling_method: str, cls_head: str,
+    def __init__(self, backbone: nn.Module, adapter: nn.Module | None, pooling_method: str, cls_head: str,
                  *, metric: str = "cos", gamma: float = 0.99, n_prototypes: int = 5, n_classes: int = 200,
                  pca_fg_threshold: float = 0.5, dim: int = 768):
         super().__init__()
@@ -23,23 +23,22 @@ class ProtoDINO(nn.Module):
         self.C = n_classes + 1
         self.pca_fg_threshold = pca_fg_threshold
         self.backbone = backbone
-        self.neck = neck
-
+        self.adapter = adapter
+        
+        assert metric in ["l2", "cos"]
         self.metric = metric
         self.dim = dim
         self.register_buffer("prototypes", torch.empty(self.C, self.n_prototypes, self.dim))
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
-        for param in self.neck.parameters():
+        for param in self.adapter.parameters():
             nn.init.zeros_(param)
-            nn.init.zeros_(param)
-        
-        self.pretrain_prototypes = True
         
         assert pooling_method in ["sum", "avg", "max"]
-        self.pooling_method = pooling_method
         assert cls_head in ["fc", "sum", "avg", 'sa']
+        self.pooling_method = pooling_method
         self.cls_head = cls_head
+
         if cls_head == "fc":
             self.fc = nn.Linear(self.n_prototypes * self.n_classes, self.n_classes, bias=False)
             prototype_class_assiciation = torch.eye(self.n_classes).repeat_interleave(self.n_prototypes, dim=0)
@@ -120,7 +119,8 @@ class ProtoDINO(nn.Module):
 
         patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
         prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
-        patch_tokens_updated = patch_tokens_norm + self.neck(patch_tokens_norm)
+
+        patch_tokens_updated = patch_tokens_norm + self.adapter(patch_tokens_norm)
 
         if self.metric == "l2":
             patch_prototype_dists = torch.cdist(patch_tokens_updated, rearrange(self.prototypes, "C K dim -> (C K) dim"), p=2)
@@ -145,9 +145,6 @@ class ProtoDINO(nn.Module):
             image_prototype_logits = patch_prototype_logits.sum(1)  # shape: [B, C, K,], C=n_classes+1
         else:
             image_prototype_logits = patch_prototype_logits.mean(1)  # shape: [B, C, K,], C=n_classes+1
-        
-        # Remove background logits
-        # image_prototype_logits = image_prototype_logits[:, :-1, :]
         
         if self.cls_head == "sa":
             sa_weights = F.softmax(self.sa, dim=-1) * self.n_prototypes
@@ -182,15 +179,13 @@ class ProtoDINO(nn.Module):
 class ProtoPNetLoss(nn.Module):
     def __init__(self, l_clst_coef: float, l_sep_coef: float, l_l1_coef: float) -> None:
         super().__init__()
+        assert l_clst_coef <= 0. and l_sep_coef>= 0.
         self.l_clst_coef = l_clst_coef
         self.l_sep_coef = l_sep_coef
         self.l_l1_coef = l_l1_coef
         self.xe = nn.CrossEntropyLoss()
 
-    def forward(self, outputs: tuple[torch.Tensor, torch.Tensor],
-                batch: dict[str, torch.Tensor]):
-                # proto_class_association: torch.Tensor,
-                # fc_weights: torch.Tensor):
+    def forward(self, outputs: tuple[torch.Tensor, torch.Tensor], batch: dict[str, torch.Tensor]):
         logits, dists = outputs["class_logits"], outputs["image_prototype_logits"]
         _, labels, _, _ = batch
 
@@ -204,10 +199,6 @@ class ProtoPNetLoss(nn.Module):
             loss_dict["_l_clst_raw"] = l_clst
             loss_dict["_l_sep_raw"] = l_sep
 
-        # if self.l_l1_coef != 0:
-        #     l1_mask = 1 - proto_class_association.T
-        #     l1 = (fc_weights * l1_mask).norm(p=1)
-        #     loss_dict["l_l1"] = self.l_l1_coef * l1
         return loss_dict
 
     @staticmethod

@@ -18,11 +18,11 @@ from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from models.dino import ProtoDINO, ProtoPNetLoss
-from models.backbone import DINOv2BackboneExpanded, load_projection
+from models.backbone import DINOv2BackboneExpanded, load_adapter
 from cub_dataset import CUBDataset
 from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
 from utils.config import setup_config_and_logging
-from models.utils import get_cosine_schedule_with_warmup
+from models.utils import get_cosine_schedule_with_warmup, print_parameters
 
 
 def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataLoader, epoch: int,
@@ -119,46 +119,62 @@ def main():
     dataloader_train = DataLoader(dataset=dataset_train, batch_size=128, num_workers=8, shuffle=True)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=8, shuffle=True)
 
-    n_splits = 1
-    neck = load_projection(config["model"]["proj"])
+    adapter = load_adapter(config["model"]["adapter_config"])
     backbone = DINOv2BackboneExpanded(name=config["model"]["name"], n_splits=config["model"]["n_splits"])
     net = ProtoDINO(backbone=backbone,
-                    neck=neck,
+                    adapter=adapter,
                     pooling_method=config["model"]["pooling_method"],
                     cls_head=config["model"]["cls_head"], dim=backbone.dim)
 
     for params in net.parameters():
         params.requires_grad = False
     
-    train_fc = (config["model"]["cls_head"] in ["fc", "sa"]) or n_splits > 0
     optimizer = None
     scheduler = None
-    # criterion = ProtoPNetLoss(l_clst_coef=-0.08, l_sep_coef=0.008, l_l1_coef=0) if train_fc else None
-    criterion = ProtoPNetLoss(l_clst_coef=0, l_sep_coef=0, l_l1_coef=0) if train_fc else None
+    criterion = ProtoPNetLoss(l_clst_coef=config["model"]["losses"]["l_clst_coef"],
+                              l_sep_coef=config["model"]["losses"]["l_sep_coef"],
+                              l_l1_coef=config["model"]["losses"]["l_l1_coef"])
     
-    net.backbone._check()
+    param_groups = []
+    if config["model"]["tuning"] == "block_expansion":
+        param_groups += [{
+            'params': filter(lambda p: p.requires_grad, net.backbone.parameters()),
+            'lr': config["optim"]["backbone_lr"]
+        }]
+    elif config["model"]["tuning"] == "adapter":
+        param_groups += [{'params': net.adapter.parameters(), 'lr': config["optim"]["adapter_lr"]}]
+    param_groups += [{'params': net.sa, 'lr': config["optim"]["fc_lr"]}] if config["model"]["cls_head"] == "sa" else []
     
     net.to(device)
     writer = SummaryWriter(log_dir=log_dir.as_posix())
+    
+    print_parameters(net=net, logger=logger)
 
     best_epoch, best_val_acc = 0, 0.
-    fc_start_epoch = config["optim"].get("fc_start_epoch", None)
+    start_epoch = config["optim"]["start_epoch"]
     for epoch in range(config["optim"]["epochs"]):
-        epoch_train_fc = train_fc and (epoch >= fc_start_epoch)
-        if train_fc and (epoch == fc_start_epoch):
-            print("start fine-tuning")
+        is_fine_tuning = epoch >= config["optim"]["start_epoch"]
+        if epoch == start_epoch:
+            logger.info("Start Fine-tuning...")
             net.freeze_prototypes = True
+
             if config["model"]["cls_head"] == "sa":
                 net.sa.requires_grad = True
-            for param in net.neck.parameters():
+            if config["model"]["cls_head"] == "fc":
+                net.fc.weight.requires_grad = True
+                net.fc.bias.requires_grad = True
+
+            for param in net.adapter.parameters():
                 param.requires_grad = True
+            if hasattr(net.backbone, "set_requires_grad"):
+                net.backbone.set_requires_grad()
             
-            param_groups = [{'params': net.neck.parameters(), 'lr': config["optim"]["backbone_lr"]}]
-            param_groups += [{'params': net.sa, 'lr': config["optim"]["fc_lr"]}] if config["model"]["cls_head"] == "sa" else []
+            print_parameters(net=net, logger=logger)
+            
             optimizer = optim.SGD(param_groups, momentum=0.9)
             if config["optim"]["scheduler"] == "cosine":
                 scheduler = get_cosine_schedule_with_warmup(optimizer,
-                                                            num_warmup_steps=int(len(dataset_train) / 128) * config["optim"]["fc_start_epoch"],
+                                                            num_warmup_steps=int(len(dataset_train) / 128) * config["optim"]["start_epoch"],
                                                             num_training_steps=47 * config["optim"]["epochs"])
             else:
                 scheduler = None
@@ -167,9 +183,10 @@ def main():
 
         train_epoch(
             model=net,
-            criterion=criterion if epoch_train_fc else None,
-            dataloader=dataloader_train, epoch=epoch,
-            optimizer=optimizer if epoch_train_fc else None,
+            criterion=criterion if is_fine_tuning else None,
+            dataloader=dataloader_train,
+            epoch=epoch,
+            optimizer=optimizer if is_fine_tuning else None,
             writer=writer,
             logger=logger,
             device=device,

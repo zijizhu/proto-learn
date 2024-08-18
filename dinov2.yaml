@@ -7,7 +7,7 @@ dataset:
   augmentation: false
 optim:
   epochs: 120
-  fc_start_epoch: 10
+  start_epoch: 10
   backbone_lr: 0.05
   fc_lr: 1e-6
   scheduler: null

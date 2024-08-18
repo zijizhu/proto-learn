@@ -1,3 +1,4 @@
+import re
 from functools import partial
 from math import sqrt
 
@@ -75,22 +76,13 @@ class DINOv2BackboneExpanded(nn.Module):
             self.dino = arch(depth=n_blocks)
             self.dino.load_state_dict(expanded_state_dict)
             self.learnable_param_names = learnable_param_names
-            for name, param in self.dino.named_parameters():
-                param.requires_grad = name in learnable_param_names
         else:
             self.dino = torch.hub.load('facebookresearch/dinov2', name[:-1])  # type: nn.Module
             self.learnable_param_names = []
     
-    def _check(self):
-        print("Learnable parameters:")
-        for name, param in self.dino.named_parameters():
-            if param.requires_grad:
-                print(name, "(zero-ed)" if param.detach().sum() == 0 else "")
-    
     def set_requires_grad(self):
         for name, param in self.dino.named_parameters():
             param.requires_grad = name in self.learnable_param_names
-        self._check()
 
     def forward(self, x: torch.Tensor, key: str = "x_norm_patchtokens", reshape: bool = False) -> torch.Tensor:
         feature_dict = self.dino.forward_features(x)  # type: dict[str, torch.Tensor]
@@ -126,34 +118,17 @@ def load_backbone(backbone_name: str) -> tuple[nn.Module, int]:
         raise NotImplementedError
     
 
-def load_projection(name: int):
-    if name == 1:
-        return nn.Sequential(
-            nn.Linear(768, 384),
-            nn.ReLU(),
-            nn.Linear(384, 768)
-        )
-    elif name == 2:
-        return nn.Sequential(
-            nn.Linear(768, 384),
-            nn.Linear(384, 768)
-        )
-    elif name == 3:
-        return nn.Sequential(
-            nn.Linear(768, 768),
-            nn.Linear(768, 768)
-        )
-    elif name == 4:
-        return nn.Sequential(
-            nn.Linear(768, 768),
-            nn.ReLU(),
-            nn.Linear(768, 768)
-        )
-    elif name == 5:
-        return nn.Sequential(
-            nn.Linear(768, 768),
-            nn.LeakyReLU(),
-            nn.Linear(768, 768)
-        )
-    else:
-        raise ValueError
+def load_adapter(config: list[int]):
+    if not config:
+        return nn.Identity()
+    pattern = r"^\d+,\d+$"
+    layers = []
+    for s in config:
+        if re.match(s, pattern):
+            in_dim, out_dim = s.split(",")
+            layers.append(nn.Linear(int(in_dim), int(out_dim)))
+        elif s == "relu":
+            layers.append(nn.ReLU())
+        else:
+            raise ValueError
+    return nn.Sequential(layers)
