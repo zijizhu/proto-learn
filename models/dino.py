@@ -1,4 +1,5 @@
 from collections import defaultdict
+from functools import partial
 from math import sqrt
 
 import torch
@@ -15,7 +16,7 @@ class ProtoDINO(nn.Module):
 
     def __init__(self, backbone: nn.Module, adapter: nn.Module | None, pooling_method: str, cls_head: str,
                  *, metric: str = "cos", gamma: float = 0.99, n_prototypes: int = 5, n_classes: int = 200,
-                 pca_fg_threshold: float = 0.5, dim: int = 768):
+                 pca_fg_cmp: str = "le", pca_fg_threshold: float = 0.5, dim: int = 768):
         super().__init__()
         self.gamma = gamma
         self.n_prototypes = n_prototypes
@@ -24,6 +25,9 @@ class ProtoDINO(nn.Module):
         self.pca_fg_threshold = pca_fg_threshold
         self.backbone = backbone
         self.adapter = adapter
+        
+        assert pca_fg_cmp in ["ge", "le"]
+        self.cmp_fg = partial(torch.ge if pca_fg_cmp =="ge" else torch.le, other=pca_fg_threshold)
         
         assert metric in ["l2", "cos"]
         self.metric = metric
@@ -106,7 +110,7 @@ class ProtoDINO(nn.Module):
         U_scaled = (U - U.min()) / (U.max() - U.min()).squeeze()
         U_scaled = U_scaled.reshape(B, H, W)
         
-        pseudo_patch_labels = torch.where(U_scaled < self.pca_fg_threshold,
+        pseudo_patch_labels = torch.where(self.cmp_fg(U_scaled),
                                           repeat(labels, "B -> B H W", H=H, W=W),
                                           self.C - 1)
         

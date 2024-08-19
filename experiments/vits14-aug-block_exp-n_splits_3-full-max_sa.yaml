@@ -6,6 +6,7 @@ model:
   pooling_method: "max"
   cls_head: "sa"
   metric: "cos"
+  pca_fg_cmp: "ge"
   losses:
     l_xe_coef: 1
     l_clst_coef: -1

@@ -126,7 +126,10 @@ def main():
     net = ProtoDINO(backbone=backbone,
                     adapter=adapter,
                     pooling_method=config["model"]["pooling_method"],
-                    cls_head=config["model"]["cls_head"], dim=backbone.dim)
+                    cls_head=config["model"]["cls_head"],
+                    dim=backbone.dim,
+                    pca_fg_cmp=config["model"]["pca_fg_cmp"]
+    )
 
     for params in net.parameters():
         params.requires_grad = False
