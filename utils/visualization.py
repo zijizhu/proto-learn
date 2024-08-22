@@ -80,7 +80,7 @@ def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
 def visualize_prototype_assignments(outputs: dict[str, torch.Tensor], labels: torch.Tensor, writer: SummaryWriter,
                                     epoch: int, epoch_name: str, figsize: tuple[int, int] = (8, 10,)):
     patch_labels = outputs["pseudo_patch_labels"].detach().clone()  # shape: [B, H, W,]
-    L_c_dict = {c: L_c.detach().clone() for c, L_c in outputs["L_c_assignment"].items()}
+    L_c_dict = {c: L_c.detach().clone() for c, L_c in outputs["L_c_dict"].items()}
 
     nrows, ncols = figsize
     fig, axes = plt.subplots(nrows, ncols, figsize=(10, 10,))

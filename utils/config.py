@@ -6,7 +6,7 @@ from pathlib import Path
 from omegaconf import OmegaConf
 
 
-def setup_config_and_logging(base_log_dir: str = "logs"):
+def setup_config_and_logging(name: str, base_log_dir: str = "logs"):
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", "-c", type=str)
 
@@ -29,7 +29,7 @@ def setup_config_and_logging(base_log_dir: str = "logs"):
         format="[%(asctime)s][%(name)s][%(levelname)s] - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[
-            logging.FileHandler((log_dir / "train.log").as_posix()),
+            logging.FileHandler((log_dir / f"{name}.log").as_posix()),
             logging.StreamHandler(sys.stdout),
         ],
         force=True,

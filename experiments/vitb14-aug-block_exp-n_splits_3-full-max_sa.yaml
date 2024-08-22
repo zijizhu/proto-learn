@@ -2,23 +2,23 @@ model:
   name: "dinov2_vitb14_reg4"
   tuning: "block_expansion"
   n_splits: 3
-  adapter_config: null
   pooling_method: "max"
   cls_head: "sa"
   metric: "cos"
+  pca_compare: "le"
   losses:
-    l_xe_coef: 1
     l_clst_coef: -0.8
     l_sep_coef: 0.08
     l_l1_coef: 0
 dataset:
   augmentation: true
 optim:
-  epochs: 20
-  start_epoch: 4
+  epochs: 15
+  start_epoch: 3
   backbone_lr: 0.05
   adapter_lr: 0.05
   fc_lr: 1e-6
   scheduler: null
+  fine_tuning_epochs: [3, 4, 5, 6, 7, 8, 9, 10]
 debug:
   epochs: [0, 2, 4, 6, 8, 10, 12]
