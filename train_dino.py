@@ -149,12 +149,8 @@ def main():
             logger.info("Start fine-tuning...")
             for name, param in net.named_parameters():
                 param.requires_grad = "backbone" not in name
-
             for name, param in net.backbone.dino.named_parameters():
                 param.requires_grad = name in net.backbone.learnable_param_names
-            else:
-                raise AttributeError
-
         else:
             for params in net.parameters():
                 params.requires_grad = False
