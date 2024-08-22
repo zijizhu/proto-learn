@@ -116,8 +116,8 @@ def main():
                               attribute_labels_path.as_posix(),
                               transforms=transforms)
 
-    dataloader_train = DataLoader(dataset=dataset_train, batch_size=4, num_workers=8, shuffle=True)
-    dataloader_test = DataLoader(dataset=dataset_test, batch_size=4, num_workers=8, shuffle=True)
+    dataloader_train = DataLoader(dataset=dataset_train, batch_size=128, num_workers=8, shuffle=True)
+    dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=8, shuffle=True)
 
     backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
     net = ProtoDINO(
