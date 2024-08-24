@@ -127,14 +127,8 @@ def main():
         cls_head=cfg.model.cls_head,
         pca_compare=cfg.model.pca_compare
     )
-
-    param_groups = []
-    if cfg.model.tuning == "block_expansion":
-        param_groups += [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}]
-    param_groups += [{'params': net.sa, 'lr': cfg.optim.fc_lr}] if cfg.model.cls_head == "sa" else []
     
     criterion = ProtoPNetLoss(**cfg.model.losses)
-    optimizer = optim.SGD(param_groups, momentum=0.9)
 
     net.to(device)
     writer = SummaryWriter(log_dir=log_dir.as_posix())
@@ -149,9 +143,14 @@ def main():
             for name, param in net.named_parameters():
                 param.requires_grad = "backbone" not in name
             net.backbone.set_requires_grad()
+
+            param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}]
+            param_groups += [{'params': net.sa, 'lr': cfg.optim.fc_lr}] if cfg.model.cls_head == "sa" else []
+            optimizer = optim.SGD(param_groups, momentum=0.9)
         else:
             for params in net.parameters():
                 params.requires_grad = False
+            optimizer = None
 
         print_parameters(net=net, logger=logger)
         debug = epoch in cfg.debug.epochs

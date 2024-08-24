@@ -1,5 +1,7 @@
 from math import sqrt
 from pathlib import Path
+import logging
+from logging import Logger
 from typing import Callable, Optional
 
 import albumentations as A
@@ -15,8 +17,12 @@ from einops import rearrange, repeat
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import lightning as L
 
+from models.dino import ProtoDINO
+from models.backbone import DINOv2BackboneExpanded
 from cub_dataset import CUBEvalDataset
+from utils.config import load_config_and_logging
 
 
 def in_bbox(keypoint: tuple[float, float], bbox: tuple[float, float, float, float]):
@@ -64,19 +70,38 @@ def eval_consistency(net: nn.Module, dataloader: DataLoader,
     return torch.mean(a_p.max(-1).values >= 0.8)
 
 
-if __name__ == "__main__":
+def main():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    cfg, log_dir = load_config_and_logging(name="train")
+
+    logger = logging.getLogger(__name__)
+
+    L.seed_everything(42)
+    
     dataset_dir = Path("datasets") / "cub200_cropped"
     annotations_path = Path("datasets") / "CUB_200_2011"
 
     dataset_eval = CUBEvalDataset((dataset_dir / "test_cropped").as_posix(), annotations_path.as_posix())
 
     dataloader_eval = DataLoader(dataset_eval, shuffle=True, batch_size=128)
-    dataloader_eval_iter = iter(dataloader_eval)
     
-    net = ...
+    backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
+    net = ProtoDINO(
+        backbone=backbone,
+        dim=backbone.dim,
+        pooling_method=cfg.model.pooling_method,
+        cls_head=cfg.model.cls_head,
+        pca_compare=cfg.model.pca_compare
+    )
     device = torch.device
     
     net.eval()
     net.to(device)
     
+    consistency_score = eval_consistency(net, dataloader_eval)
+
+
+if __name__ == "__main__":
+    main()
     
