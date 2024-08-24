@@ -130,7 +130,7 @@ def main():
 
     param_groups = []
     if cfg.model.tuning == "block_expansion":
-        backbone_params = list(p for name, p in net.backbone.named_parameters() if name in net.backbone.learnable_param_names)
+        backbone_params = iter(p for name, p in net.backbone.named_parameters() if name in net.backbone.learnable_param_names)
         param_groups += [{'params': backbone_params, 'lr': cfg.optim.backbone_lr}]
     param_groups += [{'params': net.sa, 'lr': cfg.optim.fc_lr}] if cfg.model.cls_head == "sa" else []
     

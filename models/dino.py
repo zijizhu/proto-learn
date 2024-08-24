@@ -27,7 +27,7 @@ class ProtoDINO(nn.Module):
         assert metric in ["l2", "cos"]
         self.metric = metric
         self.dim = dim
-        self.register_buffer("prototypes", torch.empty(self.C, self.n_prototypes, self.dim))
+        self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.dim))
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
 
@@ -158,7 +158,7 @@ class ProtoDINO(nn.Module):
             class_logits = image_prototype_logits.sum(-1)  # shape: [B, C,]
             class_logits = class_logits[:, :-1]
 
-        outputs =  dict(
+        outputs = dict(
             patch_prototype_logits=patch_prototype_logits,  # shape: [B, n_patches, C, K,]
             image_prototype_logits=image_prototype_logits,  # shape: [B, C, K,]
             class_logits=class_logits,  # shape: [B, n_classes,]

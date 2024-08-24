@@ -19,6 +19,6 @@ optim:
   adapter_lr: 0.05
   fc_lr: 1e-6
   scheduler: null
-  fine_tuning_epochs: [3, 4, 5, 6, 7, 8, 9, 10]
+  fine_tuning_epochs: [1, 2, 3, 4, 5, 6]
 debug:
-  epochs: [0, 2, 4, 6, 8, 10, 12]
+  epochs: [1, 2, 3, 4, 5, 6]
