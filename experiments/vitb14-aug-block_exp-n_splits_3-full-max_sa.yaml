@@ -7,8 +7,8 @@ model:
   metric: "cos"
   pca_compare: "le"
   losses:
-    l_clst_coef: -0.8
-    l_sep_coef: 0.08
+    l_clst_coef: 0
+    l_sep_coef: 0
     l_l1_coef: 0
 dataset:
   augmentation: true
