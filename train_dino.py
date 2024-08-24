@@ -154,6 +154,9 @@ def main():
 
         print_parameters(net=net, logger=logger)
         debug = epoch in cfg.debug.epochs
+        if optimizer is not None:
+           for p in optimizer.param_groups[0]["params"]:
+               print(p.shape)
 
         train_epoch(
             optimize_prototypes=optimizing_prototypes,

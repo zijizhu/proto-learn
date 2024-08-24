@@ -55,6 +55,7 @@ class ProtoDINO(nn.Module):
                           patch_tokens: torch.Tensor,
                           patch_prototype_logits: torch.Tensor,
                           patch_labels: torch.Tensor,
+                          labels: torch.Tensor,
                           *,
                           gamma: float = 0.009,
                           use_gumbel: bool = False):
@@ -66,7 +67,8 @@ class ProtoDINO(nn.Module):
             prototypes: A tensor of shape [C, K, dim,], representing K prototypes for each of C classes.
             patch_tokens: A tensor of shape [B, n_patches, dim,].
             patch_prototype_logits: The logits between patches and prototypes of shape [B, n_patches, C, K].
-            patch_labels: A tensor of shape [B, H, W,] of type torch.long representing the patch-level class labels.
+            patch_labels: A tensor of shape [B, H, W,] of type torch.long representing the (generated) patch-level class labels.
+            labels: A tensor of shape [B,] of type torch.long representing the image-level class labels.
             gamma: A float indicating the coefficient for momentum update.
             use_gumbel: A boolean indicating whether to use gumbel softmax for patch assignments.
 
@@ -86,7 +88,7 @@ class ProtoDINO(nn.Module):
         masks = torch.empty_like(patch_labels_flat)
         L_c_dict = dict()  # type: dict[str, torch.Tensor]
 
-        for c_i, c in enumerate(patch_labels.unique().tolist()):
+        for c_i, c in enumerate(labels.unique().tolist()):
             class_fg_mask = patch_labels_flat == c  # shape: [B*H*W,]
             I_c = patches_flat[class_fg_mask]  # shape: [N, dim]
             L_c = L[class_fg_mask, c, :]  # shape: [N, K,]
@@ -171,6 +173,7 @@ class ProtoDINO(nn.Module):
                 patch_tokens=patch_tokens_norm.detach(),
                 patch_prototype_logits=patch_prototype_logits.detach(),
                 patch_labels=pseudo_patch_labels,
+                labels=labels,
                 gamma=self.gamma,
                 use_gumbel=use_gumbel
             )

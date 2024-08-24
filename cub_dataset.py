@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from albumentations.augmentations.crops.functional import crop_keypoint_by_coords
 from PIL import Image
 from torchvision.datasets import ImageFolder
+from torchvision.transforms.functional import to_tensor
 
 
 class CUBDataset(ImageFolder):
@@ -34,11 +35,16 @@ class CUBDataset(ImageFolder):
 class CUBEvalDataset(ImageFolder):
     def __init__(self,
                  root: str,
-                 annotations_root: str):
+                 annotations_root: str,
+                 normalization: bool = True,
+                 input_size: int = 224):
+        transforms = [A.Resize(width=input_size, height=input_size)]
+        transforms += [A.Normalize(mean=(0.485, 0.456, 0.406,), std=(0.229, 0.224, 0.225,))] if normalization else []
+
         super().__init__(
             root=root,
             transform=A.Compose(
-                [A.Resize(width=224, height=224)],
+                transforms,
                 keypoint_params=A.KeypointParams(
                     format='xy',
                     label_fields=None,
@@ -75,7 +81,7 @@ class CUBEvalDataset(ImageFolder):
         transformed = self.transform(image=im, keypoints=keypoints_cropped)
         transformed_im, transformed_keypoints = transformed["image"], transformed["keypoints"]
         
-        return transformed_im, np.array(transformed_keypoints), label, self.attributes[label, :], index
+        return to_tensor(transformed_im), np.array(transformed_keypoints), label, self.attributes[label, :], index
 
 
 """

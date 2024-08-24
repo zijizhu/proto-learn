@@ -81,7 +81,7 @@ class DINOv2BackboneExpanded(nn.Module):
             self.learnable_param_names = []
     
     def learnable_parameters(self):
-        return iter(param for name, param in self.dino.named_parameters() if name in self.learnable_param_names)
+        return list(param for name, param in self.dino.named_parameters() if name in self.learnable_param_names)
     
     def set_requires_grad(self):
         for name, param in self.dino.named_parameters():
