@@ -18,7 +18,7 @@ from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from models.dino import ProtoDINO, ProtoPNetLoss
-from models.backbone import DINOv2BackboneExpanded, load_adapter
+from models.backbone import DINOv2BackboneExpanded
 from cub_dataset import CUBDataset
 from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
 from utils.config import setup_config_and_logging
@@ -130,8 +130,7 @@ def main():
 
     param_groups = []
     if cfg.model.tuning == "block_expansion":
-        backbone_params = iter(p for name, p in net.backbone.named_parameters() if name in net.backbone.learnable_param_names)
-        param_groups += [{'params': backbone_params, 'lr': cfg.optim.backbone_lr}]
+        param_groups += [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}]
     param_groups += [{'params': net.sa, 'lr': cfg.optim.fc_lr}] if cfg.model.cls_head == "sa" else []
     
     criterion = ProtoPNetLoss(**cfg.model.losses)
@@ -149,8 +148,7 @@ def main():
             logger.info("Start fine-tuning...")
             for name, param in net.named_parameters():
                 param.requires_grad = "backbone" not in name
-            for name, param in net.backbone.dino.named_parameters():
-                param.requires_grad = name in net.backbone.learnable_param_names
+            net.backbone.set_requires_grad()
         else:
             for params in net.parameters():
                 params.requires_grad = False
