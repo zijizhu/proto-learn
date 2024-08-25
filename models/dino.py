@@ -28,6 +28,7 @@ class ProtoDINO(nn.Module):
         self.metric = metric
         self.dim = dim
         self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.dim))
+        self.register_buffer("scale", torch.tensor(4.0, dtype=torch.float32))
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
 
@@ -48,7 +49,7 @@ class ProtoDINO(nn.Module):
             self.fc = None
             self.sa = None
 
-        self.freeze_prototypes = False
+        self.optimizing_prototypes = True
 
     @staticmethod
     def online_clustering(prototypes: torch.Tensor,
@@ -124,7 +125,7 @@ class ProtoDINO(nn.Module):
         return pseudo_patch_labels.to(dtype=torch.long)  # shape: [B, H, W,]
 
     def forward(self, x: torch.Tensor, labels: torch.Tensor | None = None,
-                optimize_prototypes: bool = True, *, use_gumbel: bool = False):
+                *, use_gumbel: bool = False):
         assert (not self.training) or (labels is not None)
 
         patch_tokens = self.backbone(x)  # shape: [B, n_pathes, dim,]
@@ -138,6 +139,8 @@ class ProtoDINO(nn.Module):
             patch_prototype_logits = rearrange(patch_prototype_logits, "B n_patches (C K) -> B n_patches C K", C=self.C, K=self.n_prototypes)
         else:
             patch_prototype_logits = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
+        
+        patch_prototype_logits = self.scale * patch_prototype_logits
 
         if self.pooling_method == "max":
             image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,], C=n_classes+1
@@ -178,7 +181,7 @@ class ProtoDINO(nn.Module):
                 use_gumbel=use_gumbel
             )
 
-            if optimize_prototypes:
+            if self.training and self.optimizing_prototypes:
                 self.prototypes = new_prototypes
 
             outputs.update(dict(pseudo_patch_labels=pseudo_patch_labels, masks=masks, L_c_dict=L_c_dict))

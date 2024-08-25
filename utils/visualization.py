@@ -114,16 +114,22 @@ def visualize_prototype_assignments(outputs: dict[str, torch.Tensor], labels: to
 
 
 def visualize_prototype_part_keypoints(im_path: str, activation_maps: torch.Tensor, keypoints: list[tuple[float, float]],
+                                       part_vector: torch.Tensor, part_visibility: torch.Tensor,
                                        bboxes: tuple[int, ...], sample_id: int, writer: SummaryWriter, input_size: int = 224):
     K, height, width = activation_maps.shape
+    N_PARTS = len(keypoints)
     assert len(bboxes) == K
+
     src_im = Image.open(im_path).convert("RGB").resize((input_size, input_size,))
     visible_keypoints = np.array(list(kp for kp in keypoints if sum(kp) > 0))
-    kp_x, kp_y = np.hsplit(visible_keypoints, 2)
-    fig, axes = plt.subplots(2, K, figsize=(8, 8))
+    kp_x, kp_y = visible_keypoints[:, 0], visible_keypoints[:, 1]
+    part_vector_np, part_visibility_np = part_vector.cpu().numpy(), part_visibility.cpu().numpy()
+
+    fig, axes = plt.subplots(3, K, figsize=(8, 8))
     for i in range(K):
         im_overlayed = overlay_attn_map(activation_maps[i].cpu().numpy(), src_im)
         axes[0, i].imshow(im_overlayed)
+        axes[0, i].set_xticks([]), axes[0, i].set_yticks([])
 
         axes[1, i].imshow(src_im)
         axes[1, i].plot(kp_x, kp_y, "ro")
@@ -131,9 +137,14 @@ def visualize_prototype_part_keypoints(im_path: str, activation_maps: torch.Tens
         x, y, w, h = bboxes[i]
         rect = Rectangle((x, y), w, h, linewidth=2, edgecolor='r', facecolor='none')
         axes[1, i].add_patch(rect)
-
-        axes[0, i].set_xticks([]), axes[0, i].set_yticks([])
         axes[1, i].set_xticks([]), axes[1, i].set_yticks([])
+        
+        arr = np.vstack([part_vector_np[i], part_visibility_np])
+        axes[2, i].matshow(1 - arr, cmap='Pastel1')
+        for (i, j), z in np.ndenumerate(arr):
+            axes[2, i].text(j, i, z, ha='center', va='center')
+            axes[2, i].set_xticks(range(N_PARTS))
+            axes[2, i].set_yticks([])
     
     fig.tight_layout()
     fig.canvas.draw()

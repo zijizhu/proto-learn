@@ -32,7 +32,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, criterion:
 
     for batch in tqdm(dataloader):
         batch = tuple(item.to(device) for item in batch)
-        images, labels, _ = batch
+        images, labels, _, sample_indices = batch
         outputs = model(images)
         logits = outputs["logits"]
         loss_dict = criterion(outputs=outputs,
@@ -71,7 +71,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, summary_writ
     mca_val = MulticlassAccuracy(num_classes=len(dataloader.dataset.classes), average="micro").to(device)
     with torch.no_grad():
         for batch in tqdm(dataloader):
-            images, labels, _ = tuple(item.to(device) for item in batch)
+            images, labels, _, sample_indices = tuple(item.to(device) for item in batch)
             outputs = model(images)
             logits = outputs["logits"]
 

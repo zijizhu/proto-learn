@@ -25,7 +25,7 @@ from utils.config import setup_config_and_logging
 from models.utils import print_parameters
 
 
-def train_epoch(optimize_prototypes: bool, model: nn.Module, criterion: nn.Module | None, dataloader: DataLoader, epoch: int,
+def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataLoader, epoch: int,
                 optimizer: optim.Optimizer | None, writer: SummaryWriter,
                 logger: Logger, device: torch.device, debug: bool = False):
     model.train()
@@ -35,7 +35,7 @@ def train_epoch(optimize_prototypes: bool, model: nn.Module, criterion: nn.Modul
     for i, batch in enumerate(tqdm(dataloader)):
         batch = tuple(item.to(device) for item in batch)
         images, labels, _, sample_indices = batch
-        outputs = model(images, labels=labels, optimize_prototypes=optimize_prototypes)
+        outputs = model(images, labels=labels)
 
         if criterion is not None and optimizer is not None:
             loss_dict = criterion(outputs, batch)
@@ -74,7 +74,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
     for i, batch in enumerate(tqdm(dataloader)):
         batch = tuple(item.to(device) for item in batch)
         images, labels, _, sample_indices = batch
-        outputs = model(images, labels=labels, optimize_prototypes=False)
+        outputs = model(images, labels=labels)
 
         if debug and i == 0:
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
@@ -136,10 +136,9 @@ def main():
     best_epoch, best_val_acc = 0, 0.
     for epoch in range(cfg.optim.epochs):
         is_fine_tuning = epoch in cfg.optim.fine_tuning_epochs
-        optimizing_prototypes = not is_fine_tuning
 
         if is_fine_tuning:
-            logger.info("Start fine-tuning...")
+            logger.info("Start fine-tuning backbone...")
             for name, param in net.named_parameters():
                 param.requires_grad = "backbone" not in name
             net.backbone.set_requires_grad()
@@ -147,19 +146,16 @@ def main():
             param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}]
             param_groups += [{'params': net.sa, 'lr': cfg.optim.fc_lr}] if cfg.model.cls_head == "sa" else []
             optimizer = optim.SGD(param_groups, momentum=0.9)
+            net.optimizing_prototypes = False
         else:
             for params in net.parameters():
                 params.requires_grad = False
             optimizer = None
+            net.optimizing_prototypes = True
 
         print_parameters(net=net, logger=logger)
-        debug = epoch in cfg.debug.epochs
-        if optimizer is not None:
-           for p in optimizer.param_groups[0]["params"]:
-               print(p.shape)
 
         train_epoch(
-            optimize_prototypes=optimizing_prototypes,
             model=net,
             criterion=criterion if is_fine_tuning else None,
             dataloader=dataloader_train,
@@ -167,12 +163,11 @@ def main():
             optimizer=optimizer if is_fine_tuning else None,
             writer=writer,
             logger=logger,
-            device=device,
-            debug=debug
+            device=device
         )
 
         epoch_acc_val = val_epoch(model=net, dataloader=dataloader_test, epoch=epoch,
-                                  writer=writer, logger=logger, device=device,  debug=debug)
+                                  writer=writer, logger=logger, device=device)
 
         if epoch_acc_val > best_val_acc:
             best_val_acc = epoch_acc_val
