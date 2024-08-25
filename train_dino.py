@@ -136,6 +136,7 @@ def main():
     best_epoch, best_val_acc = 0, 0.
     for epoch in range(cfg.optim.epochs):
         is_fine_tuning = epoch in cfg.optim.fine_tuning_epochs
+        is_debugging = epoch in cfg.debug.epochs
 
         if is_fine_tuning:
             logger.info("Start fine-tuning backbone...")
@@ -163,7 +164,8 @@ def main():
             optimizer=optimizer if is_fine_tuning else None,
             writer=writer,
             logger=logger,
-            device=device
+            device=device,
+            debug=is_debugging
         )
 
         epoch_acc_val = val_epoch(model=net, dataloader=dataloader_test, epoch=epoch,
