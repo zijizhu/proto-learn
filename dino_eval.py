@@ -123,7 +123,7 @@ def main():
 
     logger = logging.getLogger(__name__)
 
-    L.seed_everything(42)
+    L.seed_everything(cfg.seed)
     
     dataset_dir = Path("datasets") / "cub200_cropped"
     annotations_path = Path("datasets") / "CUB_200_2011"
@@ -135,6 +135,7 @@ def main():
     net = ProtoDINO(
         backbone=backbone,
         dim=backbone.dim,
+        scale_init=cfg.model.scale_init,
         learn_scale=cfg.model.learn_scale,
         pooling_method=cfg.model.pooling_method,
         cls_head=cfg.model.cls_head,

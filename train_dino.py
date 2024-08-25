@@ -93,11 +93,11 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    cfg, log_dir = setup_config_and_logging(name="train", base_log_dir="logs_new")
+    cfg, log_dir = setup_config_and_logging(name="train", base_log_dir="logs_latest")
 
     logger = logging.getLogger(__name__)
 
-    L.seed_everything(42)
+    L.seed_everything(cfg.seed)
 
     normalize = T.Normalize(mean=(0.485, 0.456, 0.406,), std=(0.229, 0.224, 0.225,))
     transforms = T.Compose([
@@ -123,6 +123,7 @@ def main():
     net = ProtoDINO(
         backbone=backbone,
         dim=backbone.dim,
+        scale_init=cfg.model.scale_init,
         learn_scale=cfg.model.learn_scale,
         pooling_method=cfg.model.pooling_method,
         cls_head=cfg.model.cls_head,

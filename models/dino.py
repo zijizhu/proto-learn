@@ -12,7 +12,7 @@ from models.utils import sinkhorn_knopp, momentum_update, dist_to_similarity
 class ProtoDINO(nn.Module):
     def __init__(self, backbone: nn.Module, pooling_method: str, cls_head: str,
                  *, learn_scale: bool = False, metric: str = "cos", gamma: float = 0.99, n_prototypes: int = 5, n_classes: int = 200,
-                 pca_compare: str = "le", pca_threshold: float = 0.5, dim: int = 768):
+                 pca_compare: str = "le", pca_threshold: float = 0.5, scale_init: float = 4.0, dim: int = 768):
         super().__init__()
         self.gamma = gamma
         self.n_prototypes = n_prototypes
@@ -30,9 +30,9 @@ class ProtoDINO(nn.Module):
         self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.dim))
 
         if learn_scale:
-            self.scale = nn.Parameter(torch.tensor(4.0, dtype=torch.float32))
+            self.scale = nn.Parameter(torch.tensor(scale_init, dtype=torch.float32))
         else:
-            self.register_buffer("scale", torch.tensor(4.0, dtype=torch.float32))
+            self.register_buffer("scale", torch.tensor(scale_init, dtype=torch.float32))
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
 
