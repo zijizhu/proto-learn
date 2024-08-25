@@ -116,7 +116,7 @@ def eval_accuracy(model: nn.Module, dataloader: DataLoader, writer: SummaryWrite
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    cfg, log_dir = load_config_and_logging(name="train")
+    cfg, log_dir = load_config_and_logging(name="eval")
 
     logger = logging.getLogger(__name__)
 
@@ -132,6 +132,7 @@ def main():
     net = ProtoDINO(
         backbone=backbone,
         dim=backbone.dim,
+        learn_scale=cfg.model.learn_scale,
         pooling_method=cfg.model.pooling_method,
         cls_head=cfg.model.cls_head,
         pca_compare=cfg.model.pca_compare
@@ -148,7 +149,7 @@ def main():
     eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
 
     logger.info("Evaluating consistency...")
-    consistency_score = eval_consistency(net, dataloader_eval)
+    consistency_score = eval_consistency(net, dataloader_eval, writer=writer)
     logger.info(f"Network consistency score: {consistency_score}")
 
 
