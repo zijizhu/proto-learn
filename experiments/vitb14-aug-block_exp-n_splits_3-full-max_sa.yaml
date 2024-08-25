@@ -21,4 +21,4 @@ optim:
   scheduler: null
   fine_tuning_epochs: [1, 2, 3, 4, 5, 6]
 debug:
-  epochs: [1, 2, 3, 4, 5, 6]
+  epochs: [0, 1, 2, 3, 4, 5, 6]
