@@ -17,6 +17,7 @@ optim:
   epochs: 5
   backbone_lr: 0.05
   fc_lr: 1e-6
+  scale_lr: 1e-6
   scheduler: null
   fine_tuning_epochs: [1, 2, 3, 4]
 debug:
