@@ -1,28 +1,28 @@
-from math import sqrt
-from pathlib import Path
 import logging
 from logging import Logger
-from typing import Callable, Optional
+from math import sqrt
+from pathlib import Path
 
-import albumentations as A
-import cv2
+import lightning as L
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 import torch
 import torch.nn.functional as F
-import torchvision.transforms as T
 from albumentations.augmentations.crops.functional import crop_keypoint_by_coords
 from einops import rearrange, repeat
 from torch import nn
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard.writer import SummaryWriter
+from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
-import lightning as L
 
-from models.dino import ProtoDINO
-from models.backbone import DINOv2BackboneExpanded
 from cub_dataset import CUBEvalDataset
+from models.backbone import DINOv2BackboneExpanded
+from models.dino import ProtoDINO
 from utils.config import load_config_and_logging
+from utils.visualization import (
+    visualize_prototype_assignments,
+    visualize_topk_prototypes,
+)
 
 
 def in_bbox(keypoint: tuple[float, float], bbox: tuple[float, float, float, float]):
@@ -32,29 +32,31 @@ def in_bbox(keypoint: tuple[float, float], bbox: tuple[float, float, float, floa
 
 
 def compute_part_vectors(activation_maps: torch.Tensor, keypoints: torch.Tensor, height=72, width=72):
-    kp_visibility = keypoints.sum(dim=-1).to(dtype=torch.bool).to(dtype=torch.long)
+    kp_visibility = (keypoints.sum(dim=-1) > 0).to(dtype=torch.long)
     part_vectors = []
     K, H, W = activation_maps.shape
     for act_map in activation_maps:
         cy, cx = torch.unravel_index(torch.argmax(act_map), (H, W,))
-        bbox_coord = (max(cx - width // 2, 0), max(cy - height //2, 0), width, height,)
-        kp_in_part = torch.tensor([in_bbox(kp, bbox_coord) for kp in keypoints], dtype=torch.long)
+        cy, cx = cy.item(), cx.item()
+        bbox_coord = (max(cx - width // 2, 0), max(cy - height // 2, 0), width, height,)
+        kp_in_part = torch.tensor([in_bbox(kp, bbox_coord) for kp in keypoints.tolist()], dtype=torch.long)
         part_vectors.append(kp_in_part)
         
     return torch.stack(part_vectors), repeat(kp_visibility, "n_parts -> K n_parts", K=K)
 
 
+@torch.inference_mode()
 def eval_consistency(net: nn.Module, dataloader: DataLoader,
-                    *,
-                    K: int = 5, C: int = 200, N_PARTS: int = 15,
-                    H_b: int = 72, W_b: int = 72, INPUT_SIZE: int = 224, device: str | torch.device = "cpu"):
-
+                     *,
+                     K: int = 5, C: int = 200, N_PARTS: int = 15, H_b: int = 72, W_b: int = 72,
+                     INPUT_SIZE: int = 224, device: str | torch.device = "cpu"):
+    net.eval()
     O_p, O_sum = torch.zeros((C, K, N_PARTS,), dtype=torch.long), torch.zeros((C, K, N_PARTS,), dtype=torch.long)
 
     for batch in tqdm(dataloader):
         batch = tuple(item.to(device) for item in batch)
         transformed_im, transformed_keypoints, labels, attributes, _ = batch
-        outputs = net(transformed_im)
+        outputs = net(transformed_im, optimize_prototypes=False)
 
         for activations, keypoints, c in zip(outputs["patch_prototype_logits"], transformed_keypoints, labels):
             H = W = int(sqrt(activations.size(0)))
@@ -70,6 +72,30 @@ def eval_consistency(net: nn.Module, dataloader: DataLoader,
     return torch.mean(a_p.max(-1).values >= 0.8)
 
 
+@torch.inference_mode()
+def eval_accuracy(model: nn.Module, dataloader: DataLoader, writer: SummaryWriter,
+                  logger: Logger, device: torch.device, vis_every_n_batch: int = 5):
+    model.eval()
+    mca_eval = MulticlassAccuracy(num_classes=len(dataloader.dataset.classes), average="micro").to(device)
+
+    for i, batch in enumerate(tqdm(dataloader)):
+        batch = tuple(item.to(device) for item in batch)
+        images, labels, _, sample_indices = batch
+        outputs = model(images, labels=labels, optimize_prototypes=False)
+
+        if i % vis_every_n_batch == 0:
+            batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
+            visualize_topk_prototypes(outputs, batch_im_paths, writer, i, epoch_name="eval")
+            visualize_prototype_assignments(outputs, labels, writer, i, epoch_name="eval", figsize=(10, 10,))
+
+        mca_eval(outputs["class_logits"], labels)
+
+    epoch_acc_eval = mca_eval.compute().item()
+    logger.info(f"Eval acc: {epoch_acc_eval:.4f}")
+
+    return epoch_acc_eval
+
+
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -83,7 +109,6 @@ def main():
     annotations_path = Path("datasets") / "CUB_200_2011"
 
     dataset_eval = CUBEvalDataset((dataset_dir / "test_cropped").as_posix(), annotations_path.as_posix())
-
     dataloader_eval = DataLoader(dataset_eval, shuffle=True, batch_size=128)
     
     backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
@@ -94,12 +119,15 @@ def main():
         cls_head=cfg.model.cls_head,
         pca_compare=cfg.model.pca_compare
     )
-    device = torch.device
     
     net.eval()
     net.to(device)
     
+    writer = SummaryWriter(log_dir=log_dir)
+    eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
+    
     consistency_score = eval_consistency(net, dataloader_eval)
+    logger.info(f"Network consistency score: {consistency_score}")
 
 
 if __name__ == "__main__":

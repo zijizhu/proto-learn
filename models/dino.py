@@ -57,7 +57,7 @@ class ProtoDINO(nn.Module):
                           patch_labels: torch.Tensor,
                           labels: torch.Tensor,
                           *,
-                          gamma: float = 0.009,
+                          gamma: float = 0.999,
                           use_gumbel: bool = False):
         """Updates the prototypes based on the given inputs.
         This function updates the prototypes based on the patch tokens,

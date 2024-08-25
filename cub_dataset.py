@@ -81,7 +81,7 @@ class CUBEvalDataset(ImageFolder):
         transformed = self.transform(image=im, keypoints=keypoints_cropped)
         transformed_im, transformed_keypoints = transformed["image"], transformed["keypoints"]
         
-        return to_tensor(transformed_im), np.array(transformed_keypoints), label, self.attributes[label, :], index
+        return to_tensor(transformed_im), torch.tensor(transformed_keypoints), label, self.attributes[label, :], index
 
 
 """

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import cv2
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 import numpy as np
 import torch
 import torchvision.transforms.functional as F
@@ -78,7 +79,7 @@ def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
 
 
 def visualize_prototype_assignments(outputs: dict[str, torch.Tensor], labels: torch.Tensor, writer: SummaryWriter,
-                                    epoch: int, epoch_name: str, figsize: tuple[int, int] = (8, 10,)):
+                                    step: int, epoch_name: str, figsize: tuple[int, int] = (8, 10,)):
     patch_labels = outputs["pseudo_patch_labels"].detach().clone()  # shape: [B, H, W,]
     L_c_dict = {c: L_c.detach().clone() for c, L_c in outputs["L_c_dict"].items()}
 
@@ -107,6 +108,37 @@ def visualize_prototype_assignments(outputs: dict[str, torch.Tensor], labels: to
     fig_image = Image.frombuffer('RGBa', fig.canvas.get_width_height(), fig.canvas.buffer_rgba()).convert("RGB")
     plt.close(fig=fig)
     
-    writer.add_image(f"Batch prototype assignment/{epoch_name}", F.pil_to_tensor(fig_image), global_step=epoch)
+    writer.add_image(f"Batch prototype assignment/{epoch_name}", F.pil_to_tensor(fig_image), global_step=step)
     
+    return fig_image
+
+
+def visualize_prototype_part_keypoints(im_path: str, activation_maps: torch.Tensor, keypoints: list[tuple[float, float]],
+                                       bboxes: tuple[int, ...], sample_id: int, writer: SummaryWriter, input_size: int = 224):
+    K, height, width = activation_maps.shape
+    assert len(bboxes) == K
+    src_im = Image.open(im_path).convert("RGB").resize((input_size, input_size,))
+    visible_keypoints = np.array(list(kp for kp in keypoints if sum(kp) > 0))
+    kp_x, kp_y = np.hsplit(visible_keypoints, 2)
+    fig, axes = plt.subplots(2, K, figsize=(8, 8))
+    for i in range(K):
+        im_overlayed = overlay_attn_map(activation_maps[i].cpu().numpy(), src_im)
+        axes[0, i].imshow(im_overlayed)
+
+        axes[1, i].imshow(src_im)
+        axes[1, i].plot(kp_x, kp_y, "ro")
+
+        x, y, w, h = bboxes[i]
+        rect = Rectangle((x, y), w, h, linewidth=2, edgecolor='r', facecolor='none')
+        axes[1, i].add_patch(rect)
+
+        axes[0, i].set_xticks([]), axes[0, i].set_yticks([])
+        axes[1, i].set_xticks([]), axes[1, i].set_yticks([])
+    
+    fig.tight_layout()
+    fig.canvas.draw()
+    fig_image = Image.frombuffer('RGBa', fig.canvas.get_width_height(), fig.canvas.buffer_rgba()).convert("RGB")
+    plt.close(fig=fig)
+    
+    writer.add_image(f"Prototype Part Keypoints/{sample_id}", F.pil_to_tensor(fig_image))
     return fig_image
