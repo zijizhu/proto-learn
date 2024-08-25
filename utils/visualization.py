@@ -121,7 +121,7 @@ def visualize_prototype_part_keypoints(im_path: str, activation_maps: torch.Tens
     assert len(bboxes) == K
 
     src_im = Image.open(im_path).convert("RGB").resize((input_size, input_size,))
-    visible_keypoints = np.array(list(kp for kp in keypoints if sum(kp) > 0))
+    visible_keypoints = np.array(list(kp for kp in keypoints.tolist() if sum(kp) > 0))
     kp_x, kp_y = visible_keypoints[:, 0], visible_keypoints[:, 1]
     part_vector_np, part_visibility_np = part_vector.cpu().numpy(), part_visibility.cpu().numpy()
 

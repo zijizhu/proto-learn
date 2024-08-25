@@ -45,7 +45,7 @@ def load_config_and_logging(name: str):
     args = parser.parse_args()
 
     log_dir = Path(args.log_dir)
-    config = OmegaConf.load(log_dir / f"{log_dir.stem}.yaml")
+    config = OmegaConf.load(log_dir / f"config.yaml")
 
     print("Configuration:")
     print(OmegaConf.to_yaml(config))

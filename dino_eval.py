@@ -1,10 +1,14 @@
+#!/usr/bin/env python3
+import os
+import sys
+if __name__ == "__main__":
+    sys.path.append(os.path.join(os.path.dirname(__file__), "dinov2"))
 import logging
 from logging import Logger
 from math import sqrt
 from pathlib import Path
 
 import lightning as L
-import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 from einops import rearrange, repeat
@@ -31,7 +35,7 @@ def in_bbox(keypoint: tuple[float, float], bbox: tuple[float, float, float, floa
     return (x <= kp_x <= x + w) and (y <= kp_y <= y + h)
 
 
-def compute_part_vectors(activation_maps: torch.Tensor, keypoints: torch.Tensor, height=72, width=72):
+def compute_part_vectors(activation_maps: torch.Tensor, keypoints: torch.Tensor, height=72, width=72, input_size: int = 224):
     kp_visibility = (keypoints.sum(dim=-1) > 0).to(dtype=torch.long)
     part_vectors = []
     bboxes = []
@@ -39,12 +43,12 @@ def compute_part_vectors(activation_maps: torch.Tensor, keypoints: torch.Tensor,
     for act_map in activation_maps:
         cy, cx = torch.unravel_index(torch.argmax(act_map), (H, W,))
         cy, cx = cy.item(), cx.item()
-        bbox_coord = (max(cx - width // 2, 0), max(cy - height // 2, 0), width, height,)
-        kp_in_part = torch.tensor([in_bbox(kp, bbox_coord) for kp in keypoints.tolist()], dtype=torch.long)
+        bbox_coord = (min(max(cx - width // 2, 0), input_size), min(max(cy - height // 2, 0), input_size), width, height,)
+        kp_in_part = torch.tensor([in_bbox(kp, bbox_coord) for kp in keypoints.tolist()], dtype=torch.long, device=activation_maps.device)
         part_vectors.append(kp_in_part)
         bboxes.append(bbox_coord)
         
-    return torch.stack(part_vectors), repeat(kp_visibility, "n_parts -> K n_parts", K=K), bboxes
+    return torch.stack(part_vectors), kp_visibility, bboxes
 
 
 @torch.inference_mode()
@@ -53,7 +57,7 @@ def eval_consistency(net: nn.Module, dataloader: DataLoader, writer: SummaryWrit
                      K: int = 5, C: int = 200, N_PARTS: int = 15, H_b: int = 72, W_b: int = 72,
                      INPUT_SIZE: int = 224, threshold: float = 0.8, device: str | torch.device = "cpu"):
     net.eval()
-    O_p, O_sum = torch.zeros((C, K, N_PARTS,), dtype=torch.long), torch.zeros((C, K, N_PARTS,), dtype=torch.long)
+    O_p, O_sum = torch.zeros((C, K, N_PARTS,), dtype=torch.long, device=device), torch.zeros((C, K, N_PARTS,), dtype=torch.long, device=device)
 
     for batch in tqdm(dataloader):
         batch = tuple(item.to(device) for item in batch)
@@ -82,7 +86,6 @@ def eval_consistency(net: nn.Module, dataloader: DataLoader, writer: SummaryWrit
                     sample_id=sample_indices[i].item(),
                     writer=writer
                 )
-        break
 
     a_p = O_p / O_sum
     consistencies = (a_p.max(-1).values >= threshold).to(torch.float32)
@@ -97,8 +100,8 @@ def eval_accuracy(model: nn.Module, dataloader: DataLoader, writer: SummaryWrite
 
     for i, batch in enumerate(tqdm(dataloader)):
         batch = tuple(item.to(device) for item in batch)
-        images, labels, _, sample_indices = batch
-        outputs = model(images, labels=labels, optimize_prototypes=False)
+        images, transformed_keypoints, labels, attributes, sample_indices = batch
+        outputs = model(images, labels=labels)
 
         if i % vis_every_n_batch == 0:
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
@@ -149,8 +152,8 @@ def main():
     eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
 
     logger.info("Evaluating consistency...")
-    consistency_score = eval_consistency(net, dataloader_eval, writer=writer)
-    logger.info(f"Network consistency score: {consistency_score}")
+    consistency_score = eval_consistency(net, dataloader_eval, writer=writer, device=device)
+    logger.info(f"Network consistency score: {consistency_score.item()}")
 
 
 if __name__ == "__main__":
