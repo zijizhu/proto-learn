@@ -125,26 +125,27 @@ def visualize_prototype_part_keypoints(im_path: str, activation_maps: torch.Tens
     kp_x, kp_y = visible_keypoints[:, 0], visible_keypoints[:, 1]
     part_vector_np, part_visibility_np = part_vector.cpu().numpy(), part_visibility.cpu().numpy()
 
-    fig, axes = plt.subplots(3, K, figsize=(8, 8))
-    for i in range(K):
-        im_overlayed = overlay_attn_map(activation_maps[i].cpu().numpy(), src_im)
-        axes[0, i].imshow(im_overlayed)
-        axes[0, i].set_xticks([]), axes[0, i].set_yticks([])
+    fig, axes = plt.subplots(3, K, figsize=(12, 4))
+    for _k in range(K):
+        im_overlayed = overlay_attn_map(activation_maps[_k].cpu().numpy(), src_im)
+        axes[0, _k].imshow(im_overlayed)
+        axes[0, _k].set_xticks([]), axes[0, _k].set_yticks([])
 
-        axes[1, i].imshow(src_im)
-        axes[1, i].plot(kp_x, kp_y, "ro")
+        axes[1, _k].imshow(src_im)
+        axes[1, _k].scatter(kp_x, kp_y, marker="o", color="r", s=8)
 
-        x, y, w, h = bboxes[i]
+        x, y, w, h = bboxes[_k]
         rect = Rectangle((x, y), w, h, linewidth=2, edgecolor='r', facecolor='none')
-        axes[1, i].add_patch(rect)
-        axes[1, i].set_xticks([]), axes[1, i].set_yticks([])
-        
-        arr = np.vstack([part_vector_np[i], part_visibility_np])
-        axes[2, i].matshow(1 - arr, cmap='Pastel1')
+        axes[1, _k].add_patch(rect)
+        axes[1, _k].set_xticks([]), axes[1, _k].set_yticks([])
+
+        arr = np.vstack([part_vector_np[_k], part_visibility_np])
+        axes[2, _k].matshow(1 - arr, cmap='Pastel1')
         for (i, j), z in np.ndenumerate(arr):
-            axes[2, i].text(j, i, z, ha='center', va='center')
-            axes[2, i].set_xticks(range(N_PARTS))
-            axes[2, i].set_yticks([])
+            axes[2, _k].text(j, i, z, ha='center', va='center', fontsize=6)
+        axes[2, _k].set_xticks(range(N_PARTS))
+        axes[2, _k].set_xticklabels(range(N_PARTS), fontsize=7)
+        axes[2, _k].set_yticks([])
     
     fig.tight_layout()
     fig.canvas.draw()

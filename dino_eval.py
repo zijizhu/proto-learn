@@ -51,31 +51,42 @@ def compute_part_vectors(activation_maps: torch.Tensor, keypoints: torch.Tensor,
 def eval_consistency(net: nn.Module, dataloader: DataLoader, writer: SummaryWriter,
                      *,
                      K: int = 5, C: int = 200, N_PARTS: int = 15, H_b: int = 72, W_b: int = 72,
-                     INPUT_SIZE: int = 224, device: str | torch.device = "cpu"):
+                     INPUT_SIZE: int = 224, threshold: float = 0.8, device: str | torch.device = "cpu"):
     net.eval()
     O_p, O_sum = torch.zeros((C, K, N_PARTS,), dtype=torch.long), torch.zeros((C, K, N_PARTS,), dtype=torch.long)
 
     for batch in tqdm(dataloader):
         batch = tuple(item.to(device) for item in batch)
-        transformed_im, transformed_keypoints, labels, attributes, _ = batch
-        outputs = net(transformed_im, optimize_prototypes=False)
+        transformed_im, transformed_keypoints, labels, attributes, sample_indices = batch
+        outputs = net(transformed_im)
 
         for i, (activations, keypoints, c) in enumerate(zip(outputs["patch_prototype_logits"], transformed_keypoints, labels)):
             H = W = int(sqrt(activations.size(0)))
             activations = rearrange(activations, "(H W) C K -> C K H W", H=H, W=W)
             activations = F.interpolate(activations, INPUT_SIZE, mode="bicubic")  # shape: [C, K, INPUT, INPUT,]
             activations_c = activations[c, ...]  # shape: [K, H, W,]
-            part_vectors, part_visibilities, bboxes = compute_part_vectors(activation_maps=activations_c, keypoints=keypoints, height=H_b, width=W_b)  # shape: [K, N_PARTS]
+            part_vectors, part_visibilities, bboxes = compute_part_vectors(activation_maps=activations_c, keypoints=keypoints, height=H_b, width=W_b)  # shape: [K, N_PARTS,], [N_PARTS,]
 
             O_p[c] += part_vectors
-            O_sum[c] += part_visibilities
+            O_sum[c] += repeat(part_visibilities, "n_parts -> K n_parts", K=K)
             
             if i == 0:
-                visualize_prototype_part_keypoints(..., activations_c, keypoints, part_vectors, part_visibilities, bboxes=bboxes, sample_id=..., writer=writer)
-                writer.add_image
+                batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
+                visualize_prototype_part_keypoints(
+                    im_path=batch_im_paths[i],
+                    activation_maps=activations_c,
+                    keypoints=keypoints,
+                    part_vector=part_vectors,
+                    part_visibility=part_visibilities,
+                    bboxes=bboxes,
+                    sample_id=sample_indices[i].item(),
+                    writer=writer
+                )
+        break
 
     a_p = O_p / O_sum
-    return torch.mean(a_p.max(-1).values >= 0.8)
+    consistencies = (a_p.max(-1).values >= threshold).to(torch.float32)
+    return torch.mean(consistencies)
 
 
 @torch.inference_mode()
@@ -125,6 +136,8 @@ def main():
         cls_head=cfg.model.cls_head,
         pca_compare=cfg.model.pca_compare
     )
+    state_dict = torch.load(log_dir / "dino_v2_proto.pth", map_location="cpu")
+    net.load_state_dict(state_dict=state_dict)
     
     net.optimizing_prototypes = False
     net.eval()

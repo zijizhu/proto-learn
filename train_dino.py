@@ -123,6 +123,7 @@ def main():
     net = ProtoDINO(
         backbone=backbone,
         dim=backbone.dim,
+        learn_scale=cfg.model.learn_scale,
         pooling_method=cfg.model.pooling_method,
         cls_head=cfg.model.cls_head,
         pca_compare=cfg.model.pca_compare
