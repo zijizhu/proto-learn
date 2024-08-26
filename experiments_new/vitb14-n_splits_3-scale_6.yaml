@@ -1,13 +1,13 @@
 model:
-  name: "dinov2_vits14_reg4"
+  name: "dinov2_vitb14_reg4"
   tuning: "block_expansion"
   n_splits: 3
   pooling_method: "max"
   cls_head: "sa"
   metric: "cos"
-  pca_compare: "ge"
+  pca_compare: "le"
   learn_scale: false
-  scale_init: 4.0
+  scale_init: 6.0
   losses:
     l_clst_coef: 0
     l_sep_coef: 0
