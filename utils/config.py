@@ -9,7 +9,7 @@ from omegaconf import OmegaConf
 def setup_config_and_logging(name: str, base_log_dir: str = "logs"):
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", "-c", type=str)
-    parser.add_argument("--options", "-o", nargs="+")
+    parser.add_argument("--options", "-o", nargs="+", default=[])
 
     args = parser.parse_args()
 
