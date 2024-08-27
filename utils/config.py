@@ -9,11 +9,13 @@ from omegaconf import OmegaConf
 def setup_config_and_logging(name: str, base_log_dir: str = "logs"):
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", "-c", type=str)
+    parser.add_argument("--options", "-o", nargs="+")
 
     args = parser.parse_args()
 
     config_path = Path(args.config_path)
     config = OmegaConf.load(config_path)
+    config.merge_with_dotlist(args.options)
 
     log_dir = Path(base_log_dir)
     log_dir = log_dir / config_path.stem

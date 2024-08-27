@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-import os
-import sys
-if __name__ == "__main__":
-    sys.path.append(os.path.join(os.path.dirname(__file__), "dinov2"))
 import logging
 from collections import defaultdict
 from logging import Logger
@@ -124,6 +120,7 @@ def main():
         backbone=backbone,
         dim=backbone.dim,
         scale_init=cfg.model.scale_init,
+        sa_init=cfg.model.sa_init,
         learn_scale=cfg.model.learn_scale,
         pooling_method=cfg.model.pooling_method,
         cls_head=cfg.model.cls_head,

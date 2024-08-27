@@ -7,8 +7,8 @@ model:
   metric: "cos"
   pca_compare: "le"
   learn_scale: false
-  scale_init: 4.0
-  sa_init: 0.5
+  scale_init: 1.0
+  sa_init: 2.5
   losses:
     l_clst_coef: 0
     l_sep_coef: 0
