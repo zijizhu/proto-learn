@@ -29,8 +29,8 @@ def overlay_attn_map(attn_map: np.ndarray, im: Image.Image):
 def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
                               batch_im_paths: list[str],
                               writer: SummaryWriter,
-                              epoch: int,
-                              epoch_name: str,
+                              tag_fmt_str: str,
+                              step: int,
                               *,
                               topk: int = 5,
                               input_size: int = 224,
@@ -73,18 +73,20 @@ def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
         plt.close(fig=fig)
         
         figures.append(fig_image)
-        writer.add_image(f"Epoch {epoch} top {topk} prototypes/{epoch_name}/{b}", F.pil_to_tensor(fig_image))
+
+        fmt_items = dict(step=step, topk=topk, idx=b)
+        writer.add_image(tag_fmt_str.format(**fmt_items), F.pil_to_tensor(fig_image))
 
     return figures
 
 
 def visualize_prototype_assignments(outputs: dict[str, torch.Tensor], labels: torch.Tensor, writer: SummaryWriter,
-                                    step: int, epoch_name: str, figsize: tuple[int, int] = (8, 10,)):
+                                    tag: str, step: int, figsize: tuple[int, int] = (10, 12,)):
     patch_labels = outputs["pseudo_patch_labels"].detach().clone()  # shape: [B, H, W,]
     L_c_dict = {c: L_c.detach().clone() for c, L_c in outputs["L_c_dict"].items()}
 
     nrows, ncols = figsize
-    fig, axes = plt.subplots(nrows, ncols, figsize=(10, 10,))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols, nrows,))
 
     for b, (c, ax) in enumerate(zip(labels.cpu().tolist(), axes.flat)):
         patch_labels_b = patch_labels[b, :, :]  # shape: [H, W,], dtype: torch.long
@@ -108,7 +110,7 @@ def visualize_prototype_assignments(outputs: dict[str, torch.Tensor], labels: to
     fig_image = Image.frombuffer('RGBa', fig.canvas.get_width_height(), fig.canvas.buffer_rgba()).convert("RGB")
     plt.close(fig=fig)
     
-    writer.add_image(f"Batch prototype assignment/{epoch_name}", F.pil_to_tensor(fig_image), global_step=step)
+    writer.add_image(tag, F.pil_to_tensor(fig_image), global_step=step)
     
     return fig_image
 

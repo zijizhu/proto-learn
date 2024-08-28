@@ -143,8 +143,6 @@ class ProtoDINO(nn.Module):
             patch_prototype_logits = rearrange(patch_prototype_logits, "B n_patches (C K) -> B n_patches C K", C=self.C, K=self.n_prototypes)
         else:
             patch_prototype_logits = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
-        
-        patch_prototype_logits = self.scale * patch_prototype_logits
 
         if self.pooling_method == "max":
             image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,], C=n_classes+1
@@ -155,7 +153,7 @@ class ProtoDINO(nn.Module):
 
         if self.cls_head == "sa" and self.sa is not None:
             sa_weights = F.softmax(self.sa, dim=-1) * self.n_prototypes
-            image_prototype_logits_weighted = image_prototype_logits[:, :-1, :] * sa_weights
+            image_prototype_logits_weighted = self.scale * image_prototype_logits[:, :-1, :] * sa_weights
             class_logits = image_prototype_logits_weighted.sum(-1)
         elif self.cls_head == "fc" and self.fc is not None:
             image_prototype_logits_flat = rearrange(image_prototype_logits[:, :-1, :], "B n_classes K -> B (n_classes K)")

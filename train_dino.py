@@ -48,8 +48,10 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
 
         if debug and i == 0:
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
-            visualize_topk_prototypes(outputs, batch_im_paths, writer, epoch, epoch_name="train")
-            visualize_prototype_assignments(outputs, labels, writer, epoch, epoch_name="train", figsize=(8, 10,))
+            visualize_topk_prototypes(outputs, batch_im_paths, writer, step=epoch,
+                                      tag_fmt_str="Training epoch {step} batch 0 top{topk} prototypes/{idx}")
+            visualize_prototype_assignments(outputs, labels, writer, step=epoch,
+                                            tag=f"Training epoch {epoch} batch {i} prototype assignments")
 
     for k, v in running_losses.items():
         loss_avg = v / len(dataloader.dataset)
@@ -74,9 +76,10 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
 
         if debug and i == 0:
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
-            visualize_topk_prototypes(outputs, batch_im_paths, writer, epoch, epoch_name="val")
-            visualize_prototype_assignments(outputs, labels, writer, epoch, epoch_name="val", figsize=(10, 10,))
-
+            visualize_topk_prototypes(outputs, batch_im_paths, writer, step=epoch,
+                                      tag_fmt_str="Validation epoch {step} batch 0 top{topk} prototypes/{idx}")
+            visualize_prototype_assignments(outputs, labels, writer, step=epoch,
+                                            tag=f"Validation epoch {epoch} batch {i} prototype assignments")
         mca_val(outputs["class_logits"], labels)
 
     epoch_acc_val = mca_val.compute().item()

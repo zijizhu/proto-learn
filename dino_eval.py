@@ -105,8 +105,10 @@ def eval_accuracy(model: nn.Module, dataloader: DataLoader, writer: SummaryWrite
 
         if i % vis_every_n_batch == 0:
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
-            visualize_topk_prototypes(outputs, batch_im_paths, writer, i, epoch_name="eval")
-            visualize_prototype_assignments(outputs, labels, writer, i, epoch_name="eval", figsize=(10, 10,))
+            visualize_topk_prototypes(outputs, batch_im_paths, writer,
+                                      tag_fmt_str="Evaluation batch {step} top{topk} prototype assignment/{idx}", step=i)
+            visualize_prototype_assignments(outputs, labels, writer, step=i,
+                                            fmt_str=f"Evaluation batch {i} prototype assignments")
 
         mca_eval(outputs["class_logits"], labels)
 
