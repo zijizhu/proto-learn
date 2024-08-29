@@ -236,7 +236,9 @@ class ProtoPNetLoss(nn.Module):
         loss_dict["l_y"] = self.xe(logits, labels)
 
         if self.l_seg_coef > 0:
-            l_seg = self.l_seg_coef * self.seg_xe(patch_prototype_logits, pseudo_patch_labels)
+            B, H, W = pseudo_patch_labels.shape
+            patch_class_logits = rearrange(patch_prototype_logits.sum(dim=-1), "B (H W) C -> B C H W", H=W, W=W)
+            l_seg = self.l_seg_coef * self.seg_xe(patch_class_logits, pseudo_patch_labels)
             loss_dict["_l_seg_raw"] = l_seg
             loss_dict["l_seg"] = self.l_seg_coef * l_seg
 

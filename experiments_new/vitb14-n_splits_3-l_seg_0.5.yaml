@@ -1,5 +1,5 @@
 model:
-  name: "dinov2_vits14_reg4"
+  name: "dinov2_vitb14_reg4"
   tuning: "block_expansion"
   n_splits: 3
   pooling_method: "max"
