@@ -54,6 +54,7 @@ class ProtoDINO(nn.Module):
             self.sa = None
 
         self.optimizing_prototypes = True
+        self.initializing = True
 
     @staticmethod
     def online_clustering(prototypes: torch.Tensor,
@@ -114,19 +115,39 @@ class ProtoDINO(nn.Module):
 
         return assignment_masks, P_new, L_c_dict
 
-    def get_pseudo_patch_labels(self, patch_tokens: torch.Tensor, labels: torch.Tensor):
+    def get_foreground_by_PCA(self, patch_tokens: torch.Tensor, labels: torch.Tensor):
         B, n_patches, dim = patch_tokens.shape
         H = W = int(sqrt(n_patches))
-        U, _, _ = torch.pca_lowrank(patch_tokens.reshape(-1, self.dim),
-                                    q=1, center=True, niter=10)
+        U, _, _ = torch.pca_lowrank(
+            patch_tokens.reshape(-1, self.dim),
+            q=1, center=True, niter=10
+        )
         U_scaled = (U - U.min()) / (U.max() - U.min()).squeeze()  # shape: [B*H*W, 1]
         U_scaled = U_scaled.reshape(B, H, W)
 
-        pseudo_patch_labels = torch.where(self.pca_compare_fn(U_scaled),
-                                          repeat(labels, "B -> B H W", H=H, W=W),
-                                          self.C - 1)
+        pseudo_patch_labels = torch.where(
+            self.pca_compare_fn(U_scaled),
+            repeat(labels, "B -> B H W", H=H, W=W),
+            self.C - 1
+        )
 
         return pseudo_patch_labels.to(dtype=torch.long)  # shape: [B, H, W,]
+
+    def get_foreground_by_similarity(self, patch_prototype_logits: torch.Tensor, labels: torch.Tensor):
+        B, n_patches, C, K = patch_prototype_logits.shape
+        H = W = int(sqrt(n_patches))
+
+        patch_gt_class_logits = patch_prototype_logits.sum(dim=-1)[torch.arange(B), :, labels]
+        patch_bg_class_logits = patch_prototype_logits.sum(dim=-1)[torch.arange(B), :, torch.full_like(labels, self.C - 1)]
+
+        pseudo_patch_labels = torch.where(
+            torch.gt(patch_gt_class_logits, patch_bg_class_logits),
+            repeat(labels, "B -> B n_patches", n_patches=n_patches),
+            self.C - 1
+        )
+        pseudo_patch_labels = rearrange(pseudo_patch_labels, "B (H W) -> B H W", H=H, W=W)
+
+        return pseudo_patch_labels  # shape: [B, H, W,]
 
     def forward(self, x: torch.Tensor, labels: torch.Tensor | None = None,
                 *, use_gumbel: bool = False):
@@ -172,7 +193,11 @@ class ProtoDINO(nn.Module):
         )
 
         if labels is not None:
-            pseudo_patch_labels = self.get_pseudo_patch_labels(patch_tokens.detach(), labels=labels)
+            if self.initializing:
+                pseudo_patch_labels = self.get_foreground_by_PCA(patch_tokens.detach(), labels=labels)
+            else:
+                pseudo_patch_labels = self.get_foreground_by_similarity(patch_prototype_logits.detach(), labels=labels)
+
             masks, new_prototypes, L_c_dict = self.online_clustering(
                 prototypes=self.prototypes,
                 patch_tokens=patch_tokens_norm.detach(),
@@ -194,7 +219,7 @@ class ProtoDINO(nn.Module):
 class ProtoPNetLoss(nn.Module):
     def __init__(self, l_clst_coef: float, l_sep_coef: float, l_l1_coef: float) -> None:
         super().__init__()
-        assert l_clst_coef <= 0. and l_sep_coef>= 0.
+        assert l_clst_coef <= 0. and l_sep_coef >= 0.
         self.l_clst_coef = l_clst_coef
         self.l_sep_coef = l_sep_coef
         self.l_l1_coef = l_l1_coef

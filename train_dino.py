@@ -157,6 +157,9 @@ def main():
             optimizer = None
             net.optimizing_prototypes = True
 
+        if epoch > 0:
+            net.initializing = False
+
         print_parameters(net=net, logger=logger)
 
         train_epoch(
