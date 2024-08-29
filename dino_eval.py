@@ -147,6 +147,8 @@ def main():
     net.load_state_dict(state_dict=state_dict)
     
     net.optimizing_prototypes = False
+    if cfg.optim.epochs > 1:
+        net.initializing = False
     net.eval()
     net.to(device)
     

@@ -217,20 +217,28 @@ class ProtoDINO(nn.Module):
 
 
 class ProtoPNetLoss(nn.Module):
-    def __init__(self, l_clst_coef: float, l_sep_coef: float, l_l1_coef: float) -> None:
+    def __init__(self, l_seg_coef: float, l_clst_coef: float, l_sep_coef: float, l_l1_coef: float) -> None:
         super().__init__()
         assert l_clst_coef <= 0. and l_sep_coef >= 0.
+        self.l_seg_coef = l_seg_coef
         self.l_clst_coef = l_clst_coef
         self.l_sep_coef = l_sep_coef
         self.l_l1_coef = l_l1_coef
         self.xe = nn.CrossEntropyLoss()
+        self.seg_xe = nn.CrossEntropyLoss()
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: tuple[torch.Tensor, ...]):
         logits, dists = outputs["class_logits"], outputs["image_prototype_logits"]
+        patch_prototype_logits, pseudo_patch_labels = outputs["patch_prototype_logits"], outputs["pseudo_patch_labels"]
         _, labels, _, _ = batch
 
         loss_dict = dict()
         loss_dict["l_y"] = self.xe(logits, labels)
+
+        if self.l_seg_coef > 0:
+            l_seg = self.l_seg_coef * self.seg_xe(patch_prototype_logits, pseudo_patch_labels)
+            loss_dict["_l_seg_raw"] = l_seg
+            loss_dict["l_seg"] = self.l_seg_coef * l_seg
 
         if self.l_clst_coef != 0 and self.l_sep_coef != 0:
             l_clst, l_sep = self.compute_costs(dists, labels)

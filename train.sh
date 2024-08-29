@@ -2,8 +2,8 @@
 
 set -x
 
-python train_dino.py --config_path experiments_new/vits14-n_splits_3-new-scale_1.5.yaml
-python dino_eval.py --log_dir logs_latest/vits14-n_splits_3-new-scale_1.5
+python train_dino.py --config_path experiments_new/vitb14-n_splits_3-best.yaml
+python dino_eval.py --log_dir logs_latest/vitb14-n_splits_3-best
 
-python train_dino.py --config_path experiments_new/vits14-n_splits_3-new-scale_1.5_learn.yaml
-python dino_eval.py --log_dir logs_latest/vits14-n_splits_3-new-scale_1.5_learn
+python train_dino.py --config_path experiments_new/vitb14-n_splits_3-l_seg_0.5.yaml
+python dino_eval.py --log_dir logs_latest/vitb14-n_splits_3-l_seg_0.5
