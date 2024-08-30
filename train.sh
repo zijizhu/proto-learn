@@ -2,8 +2,17 @@
 
 set -x
 
-python train_dino.py --config_path experiments_new/vitb14-n_splits_3-best.yaml
-python dino_eval.py --log_dir logs_latest/vitb14-n_splits_3-best
+python train_dino.py --config_path experiments/dinov2_vitb14-base.yaml
+python dino_eval.py --log_dir logs/dinov2_vitb14-base
 
-python train_dino.py --config_path experiments_new/vitb14-n_splits_3-l_seg_0.5.yaml
-python dino_eval.py --log_dir logs_latest/vitb14-n_splits_3-l_seg_0.5
+python train_dino.py --config_path experiments/dinov2_vitb14-fine_tuned.yaml
+python dino_eval.py --log_dir logs/dinov2_vitb14-fine_tuned
+
+python train_dino.py --config_path experiments/dinov2_vits14-base.yaml
+python dino_eval.py --log_dir logs/dinov2_vits14-base
+
+python train_dino.py --config_path experiments/dinov2_vits14-fine_tuned.yaml
+python dino_eval.py --log_dir logs/dinov2_vits14-fine_tuned
+
+python train_dino.py --config_path experiments/clip_vitb16-base.yaml
+python dino_eval.py --log_dir logs_latest/clip_vitb16-base
