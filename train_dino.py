@@ -14,7 +14,7 @@ from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from models.dino import ProtoDINO, ProtoPNetLoss
-from models.backbone import DINOv2BackboneExpanded
+from models.backbone import DINOv2BackboneExpanded, MaskCLIP
 from cub_dataset import CUBDataset
 from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
 from utils.config import setup_config_and_logging
@@ -118,7 +118,13 @@ def main():
     dataloader_train = DataLoader(dataset=dataset_train, batch_size=128, num_workers=8, shuffle=True)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=8, shuffle=True)
 
-    backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
+    if "dino" in cfg.model.name:
+        backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
+    elif cfg.model.name.lower().startswith("clip"):
+        backbone = MaskCLIP(name=cfg.model.name.split("-", 1)[1])
+    else:
+        raise NotImplementedError("Backbone must be one of dinov2 or clip.")
+
     net = ProtoDINO(
         backbone=backbone,
         dim=backbone.dim,

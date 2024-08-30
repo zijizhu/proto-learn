@@ -1,16 +1,16 @@
+import os
 import re
 from functools import partial
 from math import sqrt
 
 import torch
+from dinov2.layers.block import Block, MemEffAttention
+from dinov2.models.vision_transformer import DinoVisionTransformer
 from einops import rearrange
 from torch import nn
 
-from dinov2.layers.block import Block, MemEffAttention
-from dinov2.models.vision_transformer import DinoVisionTransformer
-
+from .maskclip import clip
 from .utils import block_expansion_dino
-
 
 common_kwargs = dict(
     img_size=518,
@@ -98,6 +98,24 @@ class DINOv2BackboneExpanded(nn.Module):
             feature = rearrange(feature, "B (H W) dim -> B dim H W", H=H, W=W)
         
         return feature
+
+
+class MaskCLIP(nn.Module):
+    """
+    Implementation adapted from https://github.com/mhamilton723/FeatUp/tree/main/featup/featurizers
+    """
+    def __init__(self, name: str = "ViT-B/16"):
+        super().__init__()
+        self.model, self.preprocess = clip.load(
+            name,
+            download_root=os.getenv('TORCH_HOME', os.path.join(os.path.expanduser('~'), '.cache', 'torch'))
+        )
+        self.model.eval()
+        self.patch_size = self.model.visual.patch_size
+
+    def forward(self, img):
+        features = self.model.get_patch_encodings(img).to(torch.float32)
+        return features
 
 
 def load_backbone(backbone_name: str) -> tuple[nn.Module, int]:
