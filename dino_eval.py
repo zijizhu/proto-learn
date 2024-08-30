@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-import os
-import sys
-if __name__ == "__main__":
-    sys.path.append(os.path.join(os.path.dirname(__file__), "dinov2"))
 import logging
 from logging import Logger
 from math import sqrt
