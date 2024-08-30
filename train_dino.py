@@ -92,7 +92,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    cfg, log_dir = setup_config_and_logging(name="train", base_log_dir="logs_latest")
+    cfg, log_dir = setup_config_and_logging(name="train", base_log_dir="logs")
 
     logger = logging.getLogger(__name__)
 
@@ -120,14 +120,16 @@ def main():
 
     if "dino" in cfg.model.name:
         backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
+        dim = backbone.dim
     elif cfg.model.name.lower().startswith("clip"):
         backbone = MaskCLIP(name=cfg.model.name.split("-", 1)[1])
+        dim = 512
     else:
         raise NotImplementedError("Backbone must be one of dinov2 or clip.")
 
     net = ProtoDINO(
         backbone=backbone,
-        dim=backbone.dim,
+        dim=dim,
         scale_init=cfg.model.scale_init,
         sa_init=cfg.model.sa_init,
         learn_scale=cfg.model.learn_scale,
