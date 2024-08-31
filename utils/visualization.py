@@ -1,3 +1,4 @@
+from math import sqrt
 from pathlib import Path
 
 import cv2
@@ -33,31 +34,30 @@ def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
                               step: int,
                               *,
                               topk: int = 5,
-                              input_size: int = 224,
-                              latent_size: int = 16):
-    batch_size, C, K = batch_outputs["image_prototype_logits"].shape
-    b = 0
-    H = W = latent_size
+                              input_size: int = 224):
+    batch_size, n_patches, C, K = batch_outputs["patch_prototype_logits"].shape
+    H = W = int(sqrt(n_patches))
 
     batch_prototype_logits = rearrange(batch_outputs["image_prototype_logits"].detach(), "B C K -> B (C K)")
     batch_saliency_maps = rearrange(batch_outputs["patch_prototype_logits"].detach(), "B (H W) C K -> B H W C K", H=H, W=W)
-    
+
     figures = []
     for b, (prototype_logits, saliency_maps, im_path) in enumerate(zip(batch_prototype_logits, batch_saliency_maps, batch_im_paths)):
 
         logits, indices = prototype_logits.topk(k=topk, dim=-1)
         indices_C, indices_K = torch.unravel_index(indices=indices, shape=(C, K,))
         topk_maps = saliency_maps[:, :, indices_C, indices_K]
-        
         overlayed_images = []
+
         src_im = Image.open(im_path).convert("RGB").resize((input_size, input_size,))
 
-        topk_maps_resized_np = cv2.resize(topk_maps.cpu().numpy(),
-                                          (input_size, input_size,),
-                                          interpolation=cv2.INTER_LINEAR)
-        
+        topk_maps_resized_np = cv2.resize(
+            topk_maps.cpu().numpy(),
+            (input_size, input_size,),
+            interpolation=cv2.INTER_LINEAR
+        )
         overlayed_images = [overlay_attn_map(topk_maps_resized_np[:, :, i], src_im) for i in range(topk)]  # shaspe: [topk, input_size, input_size, 3]
-        
+
         fig, axes = plt.subplots(1, topk, figsize=(topk+2, 2))
         for ax, im, c, k in zip(axes.flat, overlayed_images, indices_C.tolist(), indices_K.tolist()):
             ax.imshow(im)
@@ -67,11 +67,11 @@ def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
         class_name, fname = Path(im_path).parts[-2:]
         fig.suptitle(f"{class_name}/{fname} top {topk} prototypes")
         fig.tight_layout()
-        
+
         fig.canvas.draw()
         fig_image = Image.frombuffer('RGBa', fig.canvas.get_width_height(), fig.canvas.buffer_rgba()).convert("RGB")
         plt.close(fig=fig)
-        
+
         figures.append(fig_image)
 
         fmt_items = dict(step=step, topk=topk, idx=b)

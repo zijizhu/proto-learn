@@ -15,7 +15,7 @@ from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from cub_dataset import CUBEvalDataset
-from models.backbone import DINOv2BackboneExpanded
+from models.backbone import DINOv2BackboneExpanded, MaskCLIP
 from models.dino import ProtoDINO
 from utils.config import load_config_and_logging
 from utils.visualization import (
@@ -129,10 +129,17 @@ def main():
     dataset_eval = CUBEvalDataset((dataset_dir / "test_cropped").as_posix(), annotations_path.as_posix())
     dataloader_eval = DataLoader(dataset_eval, shuffle=True, batch_size=128)
     
-    backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
+    if "dino" in cfg.model.name:
+        backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
+        dim = backbone.dim
+    elif cfg.model.name.lower().startswith("clip"):
+        backbone = MaskCLIP(name=cfg.model.name.split("-", 1)[1])
+        dim = 512
+    else:
+        raise NotImplementedError("Backbone must be one of dinov2 or clip.")
     net = ProtoDINO(
         backbone=backbone,
-        dim=backbone.dim,
+        dim=dim,
         scale_init=cfg.model.scale_init,
         learn_scale=cfg.model.learn_scale,
         pooling_method=cfg.model.pooling_method,
