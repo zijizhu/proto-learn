@@ -31,7 +31,6 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
     for i, batch in enumerate(tqdm(dataloader)):
         batch = tuple(item.to(device) for item in batch)
         images, labels, _, sample_indices = batch
-        batch_size, input_size, input_size = images.shape
 
         outputs = model(images, labels=labels)
 
@@ -49,6 +48,7 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
         mca_train(outputs["class_logits"], labels)
 
         if debug and i == 0:
+            batch_size, _, input_size, input_size = images.shape
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
             visualize_topk_prototypes(outputs, batch_im_paths, writer, step=epoch, input_size=input_size,
                                       tag_fmt_str="Training epoch {step} batch 0 top{topk} prototypes/{idx}")
@@ -74,13 +74,13 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
     for i, batch in enumerate(tqdm(dataloader)):
         batch = tuple(item.to(device) for item in batch)
         images, labels, _, sample_indices = batch
-        batch_size, input_size, input_size = images.shape
 
         outputs = model(images, labels=labels)
 
         mca_val(outputs["class_logits"], labels)
 
         if debug and i == 0:
+            batch_size, input_size, input_size = images.shape
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
             visualize_topk_prototypes(outputs, batch_im_paths, writer, step=epoch, input_size=input_size,
                                       tag_fmt_str="Training epoch {step} batch 0 top{topk} prototypes/{idx}")
