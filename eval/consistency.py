@@ -1,11 +1,10 @@
-import os
 import cv2
-import torch
 import numpy as np
+import torch
 import torchvision.transforms as transforms
 from tqdm import tqdm
 
-from .utils import (Cub2011Eval, mean, std, id_to_path, id_to_part_loc, id_to_bbox, part_num, in_bbox)
+from .utils import Cub2011Eval, id_to_bbox, id_to_part_loc, in_bbox, mean, part_num, std
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

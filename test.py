@@ -1,10 +1,14 @@
+from logging import getLogger
+from math import sqrt
+
 import torch
 from einops import rearrange
-from math import sqrt
-from models.dino import ProtoDINO
+
+from eval.consistency import evaluate_consistency
 from models.backbone import DINOv2BackboneExpanded, MaskCLIP
-from eval_extracted.eval_consistency import evaluate_consistency
+from models.dino import ProtoDINO
 from utils.config import load_config_and_logging
+
 
 def push_forward(self: ProtoDINO, x: torch.Tensor):
     prototype_logits = self.__call__(x, labels=None)["patch_prototype_logits"]
@@ -14,7 +18,9 @@ def push_forward(self: ProtoDINO, x: torch.Tensor):
 
 if __name__ == "__main__":
     cfg, log_dir, args = load_config_and_logging("logs", return_args=True)
+    logger = getLogger(__name__)
 
+    # Load network from config
     if "dino" in cfg.model.name:
         backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
         dim = backbone.dim
@@ -38,6 +44,7 @@ if __name__ == "__main__":
     net.img_size = 224
     net.num_prototypes_per_class = 5
 
+    # Load state dict
     state_dict = torch.load(log_dir / "dino_v2_proto.pth", map_location="cpu")
     net.load_state_dict(state_dict=state_dict)
     net.eval()
@@ -47,5 +54,5 @@ if __name__ == "__main__":
     args.nb_classes = 200
 
     score = evaluate_consistency(net, args)
-    print(score)
+    logger.info(f"Consistency score: {score}")
     
