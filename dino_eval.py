@@ -15,6 +15,7 @@ from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from cub_dataset import CUBEvalDataset
+from eval.consistency import evaluate_consistency
 from models.backbone import DINOv2BackboneExpanded, MaskCLIP
 from models.dino import ProtoDINO
 from utils.config import load_config_and_logging
@@ -113,11 +114,17 @@ def eval_accuracy(model: nn.Module, dataloader: DataLoader, writer: SummaryWrite
 
     return epoch_acc_eval
 
+def push_forward(self: ProtoDINO, x: torch.Tensor):
+    prototype_logits = self.__call__(x, labels=None)["patch_prototype_logits"]
+    batch_size, n_patches, C, K = prototype_logits.shape
+    H = W = int(sqrt(n_patches))
+    return None, rearrange(prototype_logits, "B (H W) C K -> B (C K) H W", H=H, W=W)
+
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    cfg, log_dir = load_config_and_logging(name="eval")
+    cfg, log_dir, args = load_config_and_logging(name="eval")
 
     logger = logging.getLogger(__name__)
 
@@ -160,7 +167,17 @@ def main():
     eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
 
     logger.info("Evaluating consistency...")
-    consistency_score = eval_consistency(net, dataloader_eval, writer=writer, device=device)
+
+    # Monkey-patch the model class to make it compatible with eval script
+    ProtoDINO.push_forward = push_forward
+    net.img_size = 224
+    net.num_prototypes_per_class = net.n_prototypes
+
+    args.data_path = "datasets"
+    args.test_batch_size = 64
+    args.nb_classes = 200
+
+    consistency_score = evaluate_consistency(net, args)
     logger.info(f"Network consistency score: {consistency_score.item()}")
 
 

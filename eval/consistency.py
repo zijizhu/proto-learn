@@ -1,3 +1,7 @@
+"""
+Migrated from https://github.com/hqhQAQ/EvalProtoPNet/tree/main
+"""
+
 import cv2
 import numpy as np
 import torch
