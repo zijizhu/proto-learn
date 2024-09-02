@@ -40,7 +40,7 @@ def setup_config_and_logging(name: str, base_log_dir: str = "logs"):
     return config, log_dir
 
 
-def load_config_and_logging(name: str):
+def load_config_and_logging(name: str, return_args = False):
     parser = argparse.ArgumentParser()
     parser.add_argument("--log_dir", "-l", type=str)
 
@@ -62,5 +62,6 @@ def load_config_and_logging(name: str):
         ],
         force=True,
     )
-    
+    if return_args:
+        return config, log_dir, args
     return config, log_dir
