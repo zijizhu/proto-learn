@@ -124,7 +124,7 @@ def push_forward(self: ProtoDINO, x: torch.Tensor):
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    cfg, log_dir, args = load_config_and_logging(name="eval")
+    cfg, log_dir, args = load_config_and_logging(name="eval", return_args=True)
 
     logger = logging.getLogger(__name__)
 

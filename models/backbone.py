@@ -8,6 +8,7 @@ from dinov2.layers.block import Block, MemEffAttention
 from dinov2.models.vision_transformer import DinoVisionTransformer
 from einops import rearrange
 from torch import nn
+from mmpretrain import get_model
 
 from .maskclip import clip
 from .utils import block_expansion_dino
@@ -116,6 +117,25 @@ class MaskCLIP(nn.Module):
     def forward(self, img):
         features = self.model.get_patch_encodings(img).to(torch.float32)
         return features
+
+
+class MOCO(nn.Module):
+    def __init__(self, name: str) -> None:
+        super().__init__()
+
+        self.model = get_model(
+            "mocov3_resnet50_8xb512-amp-coslr-800e_in1k",
+            pretrained=True,
+            data_preprocessor=dict(
+                type='SelfSupDataPreprocessor',
+                mean=(123.6750, 116.2800, 103.5300,),
+                std=(58.3950, 57.1200, 57.3750,),
+                to_rgb=True
+            )
+        )
+    
+    def forward(self, x):
+        self.model(x)
 
 
 def load_backbone(backbone_name: str) -> tuple[nn.Module, int]:
