@@ -3,17 +3,19 @@ import logging
 from collections import defaultdict
 from logging import Logger
 from pathlib import Path
+from functools import partial
 
 import lightning as L
 import torch
 import torchvision.transforms as T
+from torchvision.models import resnet18, ResNet18_Weights
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
-from models.dino import ProtoDINO, ProtoPNetLoss
+from models.dino import ProtoDINO, ProtoPNetLoss, PaPr
 from models.backbone import DINOv2BackboneExpanded, MaskCLIP
 from cub_dataset import CUBDataset
 from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
@@ -131,10 +133,14 @@ def main():
         dim = 512
     else:
         raise NotImplementedError("Backbone must be one of dinov2 or clip.")
+    
+    fg_extractor = PaPr(backbone=partial(resnet18, weights=ResNet18_Weights.DEFAULT), q=cfg.model.fg_quantile)
 
     net = ProtoDINO(
         backbone=backbone,
         dim=dim,
+        fg_extractor=fg_extractor,
+        n_prototypes=cfg.model.n_prototypes,
         scale_init=cfg.model.scale_init,
         sa_init=cfg.model.sa_init,
         learn_scale=cfg.model.learn_scale,
@@ -156,7 +162,7 @@ def main():
         if is_fine_tuning:
             logger.info("Start fine-tuning backbone...")
             for name, param in net.named_parameters():
-                param.requires_grad = "backbone" not in name
+                param.requires_grad = ("backbone" not in name) and ("fg_extractor" not in name)
             net.backbone.set_requires_grad()
 
             param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}]

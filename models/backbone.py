@@ -120,11 +120,11 @@ class MaskCLIP(nn.Module):
 
 
 class MOCO(nn.Module):
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str = "mocov3_resnet50_8xb512-amp-coslr-800e_in1k") -> None:
         super().__init__()
 
         self.model = get_model(
-            "mocov3_resnet50_8xb512-amp-coslr-800e_in1k",
+            name,
             pretrained=True,
             data_preprocessor=dict(
                 type='SelfSupDataPreprocessor',
@@ -135,8 +135,8 @@ class MOCO(nn.Module):
         )
     
     def forward(self, x):
-        self.model(x)
-
+        (x,) = self.model(x)
+        return rearrange(x, "B dim H W -> B (H W) dim")
 
 def load_backbone(backbone_name: str) -> tuple[nn.Module, int]:
     if backbone_name == 'resnet50':

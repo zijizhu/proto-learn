@@ -1,16 +1,42 @@
 from functools import partial
 from math import sqrt
+from typing import Callable
 
 import torch
 import torch.nn.functional as F
-from einops import rearrange, repeat, einsum
+from einops import einsum, rearrange, repeat
 from torch import nn
 
-from models.utils import sinkhorn_knopp, momentum_update, dist_to_similarity
+from models.utils import dist_to_similarity, momentum_update, sinkhorn_knopp
+
+
+class PaPr(nn.Module):
+    def __init__(self, backbone: Callable[..., nn.Module], q: float = 0.4):
+        super().__init__()
+        self.q = q
+        cnn = backbone()
+        if str(cnn).startswith("ResNet"):
+            self.proposal = nn.Sequential(*list(cnn.children())[:-2])
+        elif str(cnn).startswith("MobileNetV3"):
+            self.proposal = cnn.features  # type: nn.Module
+        else:
+            raise NotImplementedError
+
+    def forward(self, x: torch.Tensor, H: int = 16, W: int = 16):
+        x = self.proposal(x)  # B dim h w
+        x = x.mean(dim=1).unsqueeze(1)  # B 1 h w
+        x = F.interpolate(x, size=(H, W,), mode="bicubic", align_corners=True)  # B 1 H W
+        x = rearrange(x, "B D H W -> B (D H W)", D=1, H=H, W=W)
+        
+        quantiles = x.quantile(q=self.q, dim=-1, keepdim=True).to(device=x.device)  # B HW
+        masks = torch.ge(x, other=quantiles)
+        masks = rearrange(masks, "B (H W) -> B H W", H=H, W=W)
+
+        return masks
 
 
 class ProtoDINO(nn.Module):
-    def __init__(self, backbone: nn.Module, pooling_method: str, cls_head: str,
+    def __init__(self, backbone: nn.Module, pooling_method: str, cls_head: str, fg_extractor: nn.Module,
                  *, learn_scale: bool = False, metric: str = "cos", gamma: float = 0.99, n_prototypes: int = 5, n_classes: int = 200,
                  pca_compare: str = "le", pca_threshold: float = 0.5, scale_init: float = 4.0, sa_init: float = 0.5, dim: int = 768):
         super().__init__()
@@ -20,6 +46,8 @@ class ProtoDINO(nn.Module):
         self.C = n_classes + 1
         self.pca_fg_threshold = pca_threshold
         self.backbone = backbone
+
+        self.fg_extractor = fg_extractor
 
         assert pca_compare in ["ge", "le"]
         self.pca_compare_fn = partial(torch.ge if pca_compare =="ge" else torch.le, other=pca_threshold)
@@ -193,10 +221,14 @@ class ProtoDINO(nn.Module):
         )
 
         if labels is not None:
-            if self.initializing:
-                pseudo_patch_labels = self.get_foreground_by_PCA(patch_tokens.detach(), labels=labels)
-            else:
-                pseudo_patch_labels = self.get_foreground_by_similarity(patch_prototype_logits.detach(), labels=labels)
+            # if self.initializing:
+            #     pseudo_patch_labels = self.get_foreground_by_PCA(patch_tokens.detach(), labels=labels)
+            # else:
+            #     pseudo_patch_labels = self.get_foreground_by_similarity(patch_prototype_logits.detach(), labels=labels)
+            B, n_patches, C, K = patch_prototype_logits.shape
+            H = W = int(sqrt(n_patches))
+            masks = self.fg_extractor(x)
+            pseudo_patch_labels = torch.where(masks, input=repeat(labels, "B -> B H W", H=H, W=W), other=self.C - 1)
 
             masks, new_prototypes, L_c_dict = self.online_clustering(
                 prototypes=self.prototypes,
