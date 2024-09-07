@@ -121,8 +121,8 @@ class ProtoDINO(nn.Module):
 
         part_assignment_maps = torch.empty_like(patch_labels_flat)
         L_c_dict = dict()  # type: dict[str, torch.Tensor]
-
-        for c_i, c in enumerate(labels.unique().tolist()):
+        
+        for c_i, c in enumerate(patch_labels.unique().tolist()):
             class_fg_mask = patch_labels_flat == c  # shape: [B*H*W,]
             I_c = patches_flat[class_fg_mask]  # shape: [N, dim]
             L_c = L[class_fg_mask, c, :]  # shape: [N, K,]
