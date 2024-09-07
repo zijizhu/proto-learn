@@ -119,7 +119,7 @@ class ProtoDINO(nn.Module):
         P_old = prototypes.clone()
         P_new = prototypes.clone()
 
-        masks = torch.empty_like(patch_labels_flat)
+        part_assignment_maps = torch.empty_like(patch_labels_flat)
         L_c_dict = dict()  # type: dict[str, torch.Tensor]
 
         for c_i, c in enumerate(labels.unique().tolist()):
@@ -135,13 +135,13 @@ class ProtoDINO(nn.Module):
 
             P_new[c, ...] = momentum_update(P_c_old, P_c_new, momentum=gamma)
 
-            masks[class_fg_mask] = L_c_assignment_indices + (K * c_i)
+            part_assignment_maps[class_fg_mask] = L_c_assignment_indices
 
             L_c_dict[c] = L_c_assignment
 
-        assignment_masks = rearrange(masks, "(B H W) -> B H W", B=B, H=H, W=W)
+        part_assignment_maps = rearrange(part_assignment_maps, "(B H W) -> B H W", B=B, H=H, W=W)
 
-        return assignment_masks, P_new, L_c_dict
+        return part_assignment_maps, P_new, L_c_dict
 
     def get_foreground_by_PCA(self, patch_tokens: torch.Tensor, labels: torch.Tensor):
         B, n_patches, dim = patch_tokens.shape
@@ -221,16 +221,13 @@ class ProtoDINO(nn.Module):
         )
 
         if labels is not None:
-            # if self.initializing:
-            #     pseudo_patch_labels = self.get_foreground_by_PCA(patch_tokens.detach(), labels=labels)
-            # else:
-            #     pseudo_patch_labels = self.get_foreground_by_similarity(patch_prototype_logits.detach(), labels=labels)
+            # pseudo_patch_labels = self.get_foreground_by_PCA(patch_tokens.detach(), labels=labels)
             B, n_patches, C, K = patch_prototype_logits.shape
             H = W = int(sqrt(n_patches))
             masks = self.fg_extractor(x)
             pseudo_patch_labels = torch.where(masks, input=repeat(labels, "B -> B H W", H=H, W=W), other=self.C - 1)
 
-            masks, new_prototypes, L_c_dict = self.online_clustering(
+            part_assignment_maps, new_prototypes, L_c_dict = self.online_clustering(
                 prototypes=self.prototypes,
                 patch_tokens=patch_tokens_norm.detach(),
                 patch_prototype_logits=patch_prototype_logits.detach(),
@@ -243,51 +240,79 @@ class ProtoDINO(nn.Module):
             if self.training and self.optimizing_prototypes:
                 self.prototypes = new_prototypes
 
-            outputs.update(dict(pseudo_patch_labels=pseudo_patch_labels, masks=masks, L_c_dict=L_c_dict))
+            outputs.update(dict(
+                patches=patch_tokens_norm,
+                part_assignment_maps=part_assignment_maps,
+                pseudo_patch_labels=pseudo_patch_labels,
+                L_c_dict=L_c_dict
+            ))
 
         return outputs
 
 
 class ProtoPNetLoss(nn.Module):
-    def __init__(self, l_seg_coef: float, l_clst_coef: float, l_sep_coef: float, l_l1_coef: float) -> None:
+    def __init__(
+            self,
+            l_orth_coef: float,
+            l_clst_coef: float,
+            l_sep_coef: float,
+            num_classes: int = 200,
+            n_prototypes: int = 5
+        ) -> None:
         super().__init__()
         assert l_clst_coef <= 0. and l_sep_coef >= 0.
-        self.l_seg_coef = l_seg_coef
+        self.l_orth_coef = l_orth_coef
         self.l_clst_coef = l_clst_coef
         self.l_sep_coef = l_sep_coef
-        self.l_l1_coef = l_l1_coef
         self.xe = nn.CrossEntropyLoss()
-        self.seg_xe = nn.CrossEntropyLoss()
+
+        self.C = num_classes + 1
+        self.K = n_prototypes
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: tuple[torch.Tensor, ...]):
-        logits, dists = outputs["class_logits"], outputs["image_prototype_logits"]
-        patch_prototype_logits, pseudo_patch_labels = outputs["patch_prototype_logits"], outputs["pseudo_patch_labels"]
+        logits, similarities = outputs["class_logits"], outputs["image_prototype_logits"]
+        features, part_assignment_maps = outputs["patches"], outputs["part_assignment_maps"]
         _, labels, _, _ = batch
 
         loss_dict = dict()
         loss_dict["l_y"] = self.xe(logits, labels)
 
-        if self.l_seg_coef > 0:
-            B, H, W = pseudo_patch_labels.shape
-            patch_class_logits = rearrange(patch_prototype_logits.sum(dim=-1), "B (H W) C -> B C H W", H=W, W=W)
-            l_seg = self.l_seg_coef * self.seg_xe(patch_class_logits, pseudo_patch_labels)
-            loss_dict["_l_seg_raw"] = l_seg
-            loss_dict["l_seg"] = self.l_seg_coef * l_seg
+        if self.l_orth_coef > 0:
+            l_orth = self.compute_orthogonality_costs(
+                features=features,
+                part_assignment_maps=part_assignment_maps,
+                n_prototypes=self.K
+            )
+            loss_dict["l_orth"] = self.l_orth_coef * l_orth
+            loss_dict["_l_orth_raw"] = l_orth
 
         if self.l_clst_coef != 0 and self.l_sep_coef != 0:
-            l_clst, l_sep = self.compute_costs(dists, labels)
-            loss_dict["l_clst"] = self.l_clst_coef * l_clst
+            l_clst, l_sep = self.compute_prototype_costs(similarities, labels, num_classes=self.C)
+            loss_dict["l_clst"] = -(self.l_clst_coef * l_clst)
             loss_dict["l_sep"] = self.l_sep_coef * l_sep
             loss_dict["_l_clst_raw"] = l_clst
             loss_dict["_l_sep_raw"] = l_sep
 
         return loss_dict
+    
+    @staticmethod
+    def compute_orthogonality_costs(features: torch.Tensor, part_assignment_maps: torch.Tensor, n_prototypes: int):
+        B, n_patches, dim = features.shape
+
+        # Mask pooling
+        assignment_masks = F.one_hot(part_assignment_maps, num_classes=n_prototypes).to(dtype=torch.float32)  # B (HW) K
+        mean_part_features = einsum(assignment_masks, features, "B HW K, B HW dim -> B K dim") / torch.sum(assignment_masks, dim=1).unsqueeze(dim=-1)
+
+        cosine_similarities = torch.bmm(mean_part_features, rearrange(mean_part_features, "B K dim -> B dim K"))  # shape: B K dim, B dim K -> B K K
+        cosine_similarities -= repeat(torch.eye(n_prototypes, device=features.device), "H W -> B H W", B=B)
+
+        return torch.mean(cosine_similarities)
 
     @staticmethod
-    def compute_costs(l2_dists: torch.Tensor, labels: torch.Tensor):
-        positives = F.one_hot(labels, num_classes=201).to(dtype=torch.float32)
+    def compute_prototype_costs(similarities: torch.Tensor, labels: torch.Tensor, num_classes: int):
+        positives = F.one_hot(labels, num_classes=num_classes).to(dtype=torch.float32)
         negatives = 1 - positives
-        cluster_cost = torch.mean(l2_dists.max(-1).values * positives)
-        separation_cost = torch.mean(l2_dists.max(-1).values * negatives)
+        cluster_cost = torch.mean(similarities.max(-1).values * positives)
+        separation_cost = torch.mean(similarities.max(-1).values * negatives)
 
         return cluster_cost, separation_cost
