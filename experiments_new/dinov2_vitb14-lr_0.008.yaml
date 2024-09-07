@@ -10,10 +10,9 @@ model:
   scale_init: 5.0
   sa_init: 0.5
   losses:
-    l_seg_coef: 0
+    l_orth_coef: 0
     l_clst_coef: 0
     l_sep_coef: 0
-    l_l1_coef: 0
 dataset:
   augmentation: true
 optim:
