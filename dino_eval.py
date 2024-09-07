@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import logging
+from functools import partial
 from logging import Logger
 from math import sqrt
 from pathlib import Path
@@ -12,17 +13,18 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from torchmetrics.classification import MulticlassAccuracy
+from torchvision.models import ResNet18_Weights, resnet18
 from tqdm import tqdm
 
 from cub_dataset import CUBEvalDataset
 from eval.consistency import evaluate_consistency
 from models.backbone import DINOv2BackboneExpanded, MaskCLIP
-from models.dino import ProtoDINO
+from models.dino import ProtoDINO, PaPr
 from utils.config import load_config_and_logging
 from utils.visualization import (
     visualize_prototype_assignments,
+    visualize_prototype_part_keypoints,
     visualize_topk_prototypes,
-    visualize_prototype_part_keypoints
 )
 
 
@@ -144,10 +146,16 @@ def main():
         dim = 512
     else:
         raise NotImplementedError("Backbone must be one of dinov2 or clip.")
+    
+    fg_extractor = PaPr(backbone=partial(resnet18, weights=ResNet18_Weights.DEFAULT), q=cfg.model.fg_quantile)
+
     net = ProtoDINO(
         backbone=backbone,
         dim=dim,
+        fg_extractor=fg_extractor,
+        n_prototypes=cfg.model.n_prototypes,
         scale_init=cfg.model.scale_init,
+        sa_init=cfg.model.sa_init,
         learn_scale=cfg.model.learn_scale,
         pooling_method=cfg.model.pooling_method,
         cls_head=cfg.model.cls_head,
