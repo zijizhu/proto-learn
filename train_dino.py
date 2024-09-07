@@ -149,7 +149,7 @@ def main():
         pca_compare=cfg.model.pca_compare
     )
 
-    criterion = ProtoPNetLoss(**cfg.model.losses)
+    criterion = ProtoPNetLoss(**cfg.model.losses, n_prototypes=cfg.model.n_prototypes)
 
     net.to(device)
     writer = SummaryWriter(log_dir=log_dir.as_posix())
