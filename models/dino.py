@@ -260,7 +260,6 @@ class ProtoPNetLoss(nn.Module):
             n_prototypes: int = 5
         ) -> None:
         super().__init__()
-        assert l_clst_coef <= 0. and l_sep_coef >= 0.
         self.l_orth_coef = l_orth_coef
         self.l_clst_coef = l_clst_coef
         self.l_sep_coef = l_sep_coef
