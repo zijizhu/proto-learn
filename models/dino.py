@@ -139,7 +139,7 @@ class ProtoDINO(nn.Module):
 
             L_c_dict[c] = L_c_assignment
 
-        part_assignment_maps = rearrange(part_assignment_maps, "(B H W) -> B H W", B=B, H=H, W=W)
+        part_assignment_maps = rearrange(part_assignment_maps, "(B H W) -> B (H W)", B=B, H=H, W=W)
 
         return part_assignment_maps, P_new, L_c_dict
 
