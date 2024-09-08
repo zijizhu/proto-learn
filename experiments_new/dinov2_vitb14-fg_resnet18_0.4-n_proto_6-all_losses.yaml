@@ -13,8 +13,8 @@ model:
   sa_init: 0.5
   losses:
     l_orth_coef: 0.002
-    l_clst_coef: 0.8
-    l_sep_coef: 0.08
+    l_clst_coef: 0
+    l_sep_coef: 0
 dataset:
   augmentation: true
 optim:
