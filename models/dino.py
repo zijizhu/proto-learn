@@ -265,28 +265,30 @@ class ProtoPNetLoss(nn.Module):
         self.l_sep_coef = l_sep_coef
         self.xe = nn.CrossEntropyLoss()
 
-        self.C = num_classes + 1
+        self.C = num_classes
         self.K = n_prototypes
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: tuple[torch.Tensor, ...]):
         logits, similarities = outputs["class_logits"], outputs["image_prototype_logits"]
-        features, part_assignment_maps = outputs["patches"], outputs["part_assignment_maps"]
+        features, part_assignment_maps, fg_masks = outputs["patches"], outputs["part_assignment_maps"], outputs["pseudo_patch_labels"]
         _, labels, _, _ = batch
 
         loss_dict = dict()
         loss_dict["l_y"] = self.xe(logits, labels)
 
-        if self.l_orth_coef > 0:
+        if self.l_orth_coef != 0:
             l_orth = self.compute_orthogonality_costs(
                 features=features,
                 part_assignment_maps=part_assignment_maps,
-                n_prototypes=self.K
+                fg_masks=fg_masks,
+                n_prototypes=self.K,
+                bg_class_index=self.C
             )
             loss_dict["l_orth"] = self.l_orth_coef * l_orth
             loss_dict["_l_orth_raw"] = l_orth
 
         if self.l_clst_coef != 0 and self.l_sep_coef != 0:
-            l_clst, l_sep = self.compute_prototype_costs(similarities, labels, num_classes=self.C)
+            l_clst, l_sep = self.compute_prototype_costs(similarities, labels, num_classes=self.C + 1)
             loss_dict["l_clst"] = -(self.l_clst_coef * l_clst)
             loss_dict["l_sep"] = self.l_sep_coef * l_sep
             loss_dict["_l_clst_raw"] = l_clst
@@ -295,17 +297,25 @@ class ProtoPNetLoss(nn.Module):
         return loss_dict
     
     @staticmethod
-    def compute_orthogonality_costs(features: torch.Tensor, part_assignment_maps: torch.Tensor, n_prototypes: int):
+    def compute_orthogonality_costs(features: torch.Tensor,
+                                    part_assignment_maps: torch.Tensor,
+                                    fg_masks: torch.Tensor,
+                                    n_prototypes: int,
+                                    bg_class_index: int):
+        fg_masks = rearrange(fg_masks, "B H W -> B (H W)")
         B, n_patches, dim = features.shape
 
+        EPS = 1e-7
+
         # Mask pooling
-        assignment_masks = F.one_hot(part_assignment_maps, num_classes=n_prototypes).to(dtype=torch.float32)  # B (HW) K
-        mean_part_features = einsum(assignment_masks, features, "B HW K, B HW dim -> B K dim") / torch.sum(assignment_masks, dim=1).unsqueeze(dim=-1)
+        part_assignment_maps = torch.where(fg_masks == bg_class_index, n_prototypes, part_assignment_maps)  # Set background patches to assignment value of n_prototypes
+        assignment_masks = F.one_hot(part_assignment_maps, num_classes=n_prototypes + 1).to(dtype=torch.float32)  # B (HW) K
+        mean_part_features = einsum(assignment_masks, features, "B HW K, B HW dim -> B K dim") / (torch.sum(assignment_masks, dim=1).unsqueeze(dim=-1) + EPS)
 
         cosine_similarities = torch.bmm(mean_part_features, rearrange(mean_part_features, "B K dim -> B dim K"))  # shape: B K dim, B dim K -> B K K
-        cosine_similarities -= repeat(torch.eye(n_prototypes, device=features.device), "H W -> B H W", B=B)
+        cosine_similarities -= repeat(torch.eye(n_prototypes + 1, device=features.device), "H W -> B H W", B=B)
 
-        return torch.mean(cosine_similarities)
+        return torch.sum(cosine_similarities)
 
     @staticmethod
     def compute_prototype_costs(similarities: torch.Tensor, labels: torch.Tensor, num_classes: int):
