@@ -311,6 +311,8 @@ class ProtoPNetLoss(nn.Module):
         part_assignment_maps = torch.where(fg_masks == bg_class_index, n_prototypes, part_assignment_maps)  # Set background patches to assignment value of n_prototypes
         assignment_masks = F.one_hot(part_assignment_maps, num_classes=n_prototypes + 1).to(dtype=torch.float32)  # B (HW) K
         mean_part_features = einsum(assignment_masks, features, "B HW K, B HW dim -> B K dim") / (torch.sum(assignment_masks, dim=1).unsqueeze(dim=-1) + EPS)
+        
+        mean_part_features = F.normalize(mean_part_features, p=2, dim=-1)
 
         cosine_similarities = torch.bmm(mean_part_features, rearrange(mean_part_features, "B K dim -> B dim K"))  # shape: B K dim, B dim K -> B K K
         cosine_similarities -= repeat(torch.eye(n_prototypes + 1, device=features.device), "H W -> B H W", B=B)
