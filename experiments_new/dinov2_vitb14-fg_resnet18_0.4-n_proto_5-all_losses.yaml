@@ -2,7 +2,7 @@ model:
   name: dinov2_vitb14_reg4
   tuning: block_expansion
   n_splits: 3
-  n_prototypes: 6
+  n_prototypes: 5
   pooling_method: max
   cls_head: sa
   fg_quantile: 0.6

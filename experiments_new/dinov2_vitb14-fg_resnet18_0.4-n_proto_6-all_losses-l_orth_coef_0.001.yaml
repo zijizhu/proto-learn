@@ -12,7 +12,7 @@ model:
   scale_init: 5.0
   sa_init: 0.5
   losses:
-    l_orth_coef: 0.002
+    l_orth_coef: 0.001
     l_clst_coef: 0
     l_sep_coef: 0
 dataset:
