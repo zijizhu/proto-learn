@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from models.dino import ProtoDINO, ProtoPNetLoss, PaPr
 from models.backbone import DINOv2BackboneExpanded, MaskCLIP
-from cub_dataset import CUBDataset
+from cub_dataset import CUBDataset, CUBFewShotDataset
 from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
 from utils.config import setup_config_and_logging
 from models.utils import print_parameters
@@ -118,11 +118,17 @@ def main():
     dataset_train = CUBDataset((dataset_dir / training_set_path).as_posix(),
                                attribute_labels_path.as_posix(),
                                transforms=transforms)
+    dataset_train_few_shot  = CUBFewShotDataset((dataset_dir / training_set_path).as_posix(),
+                                 n_samples_per_class=10,
+                                 attribute_label_path=attribute_labels_path,
+                                 transforms=transforms)
     dataset_test = CUBDataset((dataset_dir / "test_cropped").as_posix(),
                               attribute_labels_path.as_posix(),
                               transforms=transforms)
-
-    dataloader_train = DataLoader(dataset=dataset_train, batch_size=128, num_workers=8, shuffle=True)
+    if cfg.get("few_shot", False):
+        dataloader_train = DataLoader(dataset=dataset_train_few_shot, batch_size=128, num_workers=8, shuffle=True)
+    else:
+        dataloader_train = DataLoader(dataset=dataset_train, batch_size=128, num_workers=8, shuffle=True)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=8, shuffle=True)
 
     if "dino" in cfg.model.name:

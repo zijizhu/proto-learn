@@ -1,9 +1,11 @@
-from typing import Callable, Optional
+from collections import defaultdict
 from pathlib import Path
+import random
+from typing import Callable, Optional
 
+import albumentations as A
 import numpy as np
 import pandas as pd
-import albumentations as A
 import torch
 import torch.nn.functional as F
 from albumentations.augmentations.crops.functional import crop_keypoint_by_coords
@@ -83,6 +85,35 @@ class CUBEvalDataset(ImageFolder):
         
         return to_tensor(transformed_im), torch.tensor(transformed_keypoints), label, self.attributes[label, :], index
 
+
+class CUBFewShotDataset(ImageFolder):
+    def __init__(self,
+                 root: str,
+                 n_samples_per_class: int,
+                 attribute_label_path: str,
+                 transforms: Optional[Callable] = None,
+                 target_transform: Optional[Callable] = None):
+        super().__init__(
+            root=root,
+            transform=transforms,
+            target_transform=target_transform
+        )
+        self.n_samples_per_class = n_samples_per_class
+        label_to_paths = defaultdict(list)
+        for path, label in self.samples:
+            label_to_paths[label].append(path)
+
+        self.samples = []
+        for label, class_sampels in label_to_paths.items():
+            self.samples += [(s, label,) for s in random.sample(class_sampels, k=n_samples_per_class)]
+
+        attributes_np = np.loadtxt(attribute_label_path)
+        self.attributes = F.normalize(torch.tensor(attributes_np, dtype=torch.float32), p=2, dim=-1)
+
+    def __getitem__(self, index: int):
+        im_path, label = self.samples[index]
+        im_pt = self.transform(Image.open(im_path).convert("RGB"))
+        return im_pt, label, self.attributes[label, :], index
 
 """
 def in_bbox(keypoint: tuple[float, float], bbox: tuple[float, float, float, float]):

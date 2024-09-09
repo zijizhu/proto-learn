@@ -1,0 +1,31 @@
+few_shot: false
+model:
+  name: dinov2_vitb14_reg4
+  tuning: block_expansion
+  n_splits: 3
+  n_prototypes: 5
+  pooling_method: max
+  cls_head: sa
+  fg_quantile: 0.6
+  metric: cos
+  pca_compare: le
+  learn_scale: true
+  scale_init: 5.0
+  sa_init: 0.5
+  losses:
+    l_orth_coef: 0
+    l_clst_coef: 0
+    l_sep_coef: 0
+dataset:
+  augmentation: false
+optim:
+  epochs: 1
+  backbone_lr: 0
+  fc_lr: 0
+  scale_lr: 0
+  scheduler: null
+  fine_tuning_epochs: []
+debug:
+  epochs:
+  - 0
+seed: 42

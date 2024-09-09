@@ -305,8 +305,6 @@ class ProtoPNetLoss(nn.Module):
         fg_masks = rearrange(fg_masks, "B H W -> B (H W)")
         B, n_patches, dim = features.shape
 
-        EPS = 1e-7
-
         # Mask pooling
         part_assignment_maps = torch.where(fg_masks == bg_class_index, n_prototypes, part_assignment_maps)  # Set background patches to assignment value of n_prototypes
         assignment_masks = F.one_hot(part_assignment_maps, num_classes=n_prototypes + 1).to(dtype=torch.float32)  # B (HW) K
