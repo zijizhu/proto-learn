@@ -5,6 +5,7 @@ model:
   n_splits: 3
   n_prototypes: 5
   pooling_method: max
+  gamma: 0.8
   cls_head: sa
   fg_quantile: 0.6
   metric: cos

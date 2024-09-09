@@ -147,6 +147,7 @@ def main():
         dim=dim,
         fg_extractor=fg_extractor,
         n_prototypes=cfg.model.n_prototypes,
+        gamma=cfg.model.get("gamma", 0.99),
         scale_init=cfg.model.scale_init,
         sa_init=cfg.model.sa_init,
         learn_scale=cfg.model.learn_scale,
