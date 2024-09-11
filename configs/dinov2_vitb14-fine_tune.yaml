@@ -22,9 +22,9 @@ dataset:
   augmentation: true
 optim:
   epochs: 2
-  backbone_lr: 0
-  fc_lr: 0
-  scale_lr: 0
+  backbone_lr: 0.005
+  fc_lr: 1.0e-06
+  scale_lr: 1.0e-4
   scheduler: null
   fine_tuning_epochs:
     - 0

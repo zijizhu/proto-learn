@@ -158,10 +158,7 @@ class ProtoDINO(nn.Module):
 
             P_new[c, ...] = momentum_update(P_c_old, P_c_new, momentum=gamma)
 
-            if c == bg_class:
-                part_assignment_maps[class_fg_mask] = c * K  # no need to optimize prototypes for background class
-            else:
-                part_assignment_maps[class_fg_mask] = L_c_assignment_indices + c * K
+            part_assignment_maps[class_fg_mask] = L_c_assignment_indices + c * K
 
             L_c_dict[c] = L_c_assignment
 
@@ -284,7 +281,11 @@ class ProtoPNetLoss(nn.Module):
         loss_dict["l_y"] = self.xe(logits, labels)
 
         if self.l_patch_coef != 0:
-            l_patch = self.compute_patch_contrastive_cost(patch_prototype_logits, part_assignment_maps)
+            l_patch = self.compute_patch_contrastive_cost(
+                patch_prototype_logits,
+                part_assignment_maps,
+                class_weight=torch.tensor([1] * self.C * self.K + [0.1] * self.K, dtype=torch.float32, device=logits.device)
+            )
             loss_dict["l_patch"] = self.l_patch_coef * l_patch
             loss_dict["_l_patch_raw"] = l_patch
 
@@ -310,9 +311,10 @@ class ProtoPNetLoss(nn.Module):
 
     @staticmethod
     def compute_patch_contrastive_cost(patch_prototype_logits: torch.Tensor,
-                                       patch_prototype_assignments: torch.Tensor):
-        patch_prototype_logits = rearrange(patch_prototype_logits, "B N C K -> B (C K) N")
-        loss = F.cross_entropy(patch_prototype_logits, target=patch_prototype_assignments)
+                                       patch_prototype_assignments: torch.Tensor,
+                                       class_weight: torch.Tensor):
+        patch_prototype_logits = rearrange(patch_prototype_logits, "B N C K -> B (C K) N") / 0.1
+        loss = F.cross_entropy(patch_prototype_logits, target=patch_prototype_assignments, weight=class_weight)
         return loss
     
     @staticmethod

@@ -9,6 +9,7 @@ from omegaconf import OmegaConf
 def setup_config_and_logging(name: str, base_log_dir: str = "logs"):
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", "-c", type=str)
+    parser.add_argument("--resume_ckpt", "-r", type=str)
     parser.add_argument("--options", "-o", nargs="+", default=[])
 
     args = parser.parse_args()
@@ -37,7 +38,7 @@ def setup_config_and_logging(name: str, base_log_dir: str = "logs"):
         force=True,
     )
     
-    return config, log_dir
+    return config, log_dir, args.resume_ckpt
 
 
 def load_config_and_logging(name: str, return_args = False):

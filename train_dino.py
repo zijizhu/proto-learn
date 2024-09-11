@@ -97,7 +97,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    cfg, log_dir = setup_config_and_logging(name="train", base_log_dir="logs")
+    cfg, log_dir, resume_ckpt = setup_config_and_logging(name="train", base_log_dir="logs")
 
     logger = logging.getLogger(__name__)
 
@@ -157,6 +157,9 @@ def main():
         pooling_method=cfg.model.pooling_method,
         cls_head=cfg.model.cls_head
     )
+    if resume_ckpt:
+        state_dict = torch.load(resume_ckpt, map_location="cpu")
+        net.load_state_dict(state_dict)
 
     criterion = ProtoPNetLoss(**cfg.model.losses, n_prototypes=cfg.model.n_prototypes)
 
