@@ -2,17 +2,17 @@ model:
   name: dinov2_vitb14_reg4
   tuning: block_expansion
   n_splits: 3
-  gamma: 0.999
+  gamma: 0.99
   n_prototypes: 5
   pooling_method: max
   cls_head: sa
   learn_scale: true
-  scale_init: 1.0
+  scale_init: 5.0
   sa_init: 0.5
   fg_extractor: "PCA"
   fg_extractor_args:
     compare_fn: "le"
-    threshold: 0.7
+    threshold: 0.5
   losses:
     l_patch_coef: 0
     l_orth_coef: 0

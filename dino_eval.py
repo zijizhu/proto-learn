@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import logging
-from functools import partial
 from logging import Logger
 from math import sqrt
 from pathlib import Path
@@ -13,13 +12,12 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from torchmetrics.classification import MulticlassAccuracy
-from torchvision.models import ResNet18_Weights, resnet18
 from tqdm import tqdm
 
 from cub_dataset import CUBEvalDataset
 from eval.consistency import evaluate_consistency
 from models.backbone import DINOv2BackboneExpanded, MaskCLIP
-from models.dino import ProtoDINO, PaPr
+from models.dino import ProtoDINO, PaPr, PCA
 from utils.config import load_config_and_logging
 from utils.visualization import (
     visualize_prototype_assignments,
@@ -105,9 +103,9 @@ def eval_accuracy(model: nn.Module, dataloader: DataLoader, writer: SummaryWrite
         if i % vis_every_n_batch == 0:
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
             visualize_topk_prototypes(outputs, batch_im_paths, writer,
-                                      tag_fmt_str="Evaluation batch {step} top{topk} prototype/eval/{idx}", step=i)
+                                      tag_fmt_str="Top{topk} prototype/eval/batch {step}/{idx}", step=i)
             visualize_prototype_assignments(outputs, labels, writer, step=i,
-                                            tag=f"Evaluation batch {i} prototype assignments")
+                                            tag=f"Evaluation prototype assignments/batch {i}")
 
         mca_eval(outputs["class_logits"], labels)
 
@@ -146,20 +144,25 @@ def main():
         dim = 512
     else:
         raise NotImplementedError("Backbone must be one of dinov2 or clip.")
-    
-    fg_extractor = PaPr(backbone=partial(resnet18, weights=ResNet18_Weights.DEFAULT), q=cfg.model.fg_quantile)
+    n_classes = 200
+
+    assert cfg.model.fg_extractor in ["PCA", "PaPr"]
+    if cfg.model.fg_extractor == "PaPr":
+        fg_extractor = PaPr(bg_class=n_classes, **cfg.model.fg_extractor_args)
+    else:
+        fg_extractor = PCA(bg_class=n_classes, **cfg.model.fg_extractor_args)
 
     net = ProtoDINO(
         backbone=backbone,
         dim=dim,
         fg_extractor=fg_extractor,
         n_prototypes=cfg.model.n_prototypes,
+        gamma=cfg.model.get("gamma", 0.99),
         scale_init=cfg.model.scale_init,
         sa_init=cfg.model.sa_init,
         learn_scale=cfg.model.learn_scale,
         pooling_method=cfg.model.pooling_method,
-        cls_head=cfg.model.cls_head,
-        pca_compare=cfg.model.pca_compare
+        cls_head=cfg.model.cls_head
     )
     state_dict = torch.load(log_dir / "dino_v2_proto.pth", map_location="cpu")
     net.load_state_dict(state_dict=state_dict)

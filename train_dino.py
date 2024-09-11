@@ -3,12 +3,10 @@ import logging
 from collections import defaultdict
 from logging import Logger
 from pathlib import Path
-from functools import partial
 
 import lightning as L
 import torch
 import torchvision.transforms as T
-from torchvision.models import resnet18, ResNet18_Weights
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
@@ -53,9 +51,9 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
             batch_size, _, input_size, input_size = images.shape
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
             visualize_topk_prototypes(outputs, batch_im_paths, writer, step=epoch, input_size=input_size,
-                                      tag_fmt_str="Training epoch {step} batch 0 top{topk} prototypes/{idx}")
+                                      tag_fmt_str="Training first batch top{topk} prototypes/epoch {step}/{idx}")
             visualize_prototype_assignments(outputs, labels, writer, step=epoch,
-                                            tag=f"Training epoch {epoch} batch {i} prototype assignments")
+                                            tag=f"Training first batch prototype assignments/epoch {epoch}")
 
     for k, v in running_losses.items():
         loss_avg = v / len(dataloader.dataset)
