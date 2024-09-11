@@ -5,7 +5,7 @@ import lightning as L
 import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
-from einops import repeat
+from einops import repeat, rearrange
 from PIL import Image
 from torch import nn
 
@@ -22,8 +22,8 @@ STD = (0.229, 0.224, 0.225,)
 INPUT_SIZE = 224
 BATCH_SIZE = 16
 
-N_PROTOTYPES = 4
-DIM = 2048
+N_PROTOTYPES = 5
+DIM = 768
 GAMMA = 0.2  # coefficient of OLD value
 
 CLASS_ID = 15
@@ -80,7 +80,8 @@ if __name__ == "__main__":
     #### Initialize model ####
     @torch.no_grad()
     def get_features(net: nn.Module, x: torch.tensor):
-        return net.forward_features(x)['x_norm_patchtokens']
+        features = net.forward_features(x)['x_norm_patchtokens']  # type: torch.Tensor
+        return features
 
     net = torch.hub.load('facebookresearch/dinov2', "dinov2_vitb14_reg")
     #### Initialize model ####

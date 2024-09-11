@@ -1,11 +1,19 @@
 #!/bin/bash
 
 declare -a filenames=(
-"dinov2_vitb14-fg_resnet18_0.4-n_proto_5-all_losses-l_orth_coef_0.001"
-"dinov2_vitb14-fg_resnet18_0.4-n_proto_5-all_losses"
-"dinov2_vitb14-fg_resnet18_0.4-n_proto_6-all_losses-l_orth_coef_0.001"
-"dinov2_vitb14-fg_resnet18_0.4-n_proto_6-all_losses-l_orth_coef_0.003"
-"dinov2_vitb14-fg_resnet18_0.4-n_proto_6-all_losses"
+"dinov2_vitb14-base"
+"dinov2_vitb14-fine_tune"
+)
+
+for f in "${filenames[@]}"
+do
+  python train_dino.py --config_path "configs/$f.yaml"
+  python dino_eval.py --log_dir "logs/$f"
+done
+
+declare -a filenames=(
+"dinov2_vitb14-n_prototypes_5-fine_tune"
+"dinov2_vitb14-n_prototypes_8-fine_tune"
 )
 
 for f in "${filenames[@]}"

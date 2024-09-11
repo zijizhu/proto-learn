@@ -37,7 +37,7 @@ class PaPr(nn.Module):
 
 class ProtoDINO(nn.Module):
     def __init__(self, backbone: nn.Module, pooling_method: str, cls_head: str, fg_extractor: nn.Module,
-                 *, learn_scale: bool = False, metric: str = "cos", gamma: float = 0.99, n_prototypes: int = 5, n_classes: int = 200,
+                 *, learn_scale: bool = False, metric: str = "cos", gamma: float = 0.999, n_prototypes: int = 5, n_classes: int = 200,
                  pca_compare: str = "le", pca_threshold: float = 0.5, scale_init: float = 4.0, sa_init: float = 0.5, dim: int = 768):
         super().__init__()
         self.gamma = gamma
