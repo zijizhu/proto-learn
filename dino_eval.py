@@ -105,7 +105,7 @@ def eval_accuracy(model: nn.Module, dataloader: DataLoader, writer: SummaryWrite
         if i % vis_every_n_batch == 0:
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
             visualize_topk_prototypes(outputs, batch_im_paths, writer,
-                                      tag_fmt_str="Evaluation batch {step} top{topk} prototype assignment/{idx}", step=i)
+                                      tag_fmt_str="Evaluation batch {step} top{topk} prototype/eval/{idx}", step=i)
             visualize_prototype_assignments(outputs, labels, writer, step=i,
                                             tag=f"Evaluation batch {i} prototype assignments")
 

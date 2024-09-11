@@ -15,7 +15,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
-from models.dino import ProtoDINO, ProtoPNetLoss, PaPr
+from models.dino import ProtoDINO, ProtoPNetLoss, PaPr, PCA
 from models.backbone import DINOv2BackboneExpanded, MaskCLIP
 from cub_dataset import CUBDataset, CUBFewShotDataset
 from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
@@ -112,6 +112,7 @@ def main():
         normalize
     ])
 
+    n_classes = 200
     dataset_dir = Path("datasets") / "cub200_cropped"
     attribute_labels_path = Path("datasets") / "class_attribute_labels_continuous.txt"
     training_set_path = "train_cropped_augmented" if cfg.dataset.augmentation else "train_cropped"
@@ -140,7 +141,11 @@ def main():
     else:
         raise NotImplementedError("Backbone must be one of dinov2 or clip.")
     
-    fg_extractor = PaPr(backbone=partial(resnet18, weights=ResNet18_Weights.DEFAULT), q=cfg.model.fg_quantile)
+    assert cfg.model.fg_extractor in ["PCA", "PaPr"]
+    if cfg.model.fg_extractor == "PaPr":
+        fg_extractor = PaPr(bg_class=n_classes, **cfg.model.fg_extractor_args)
+    else:
+        fg_extractor = PCA(bg_class=n_classes, **cfg.model.fg_extractor_args)
 
     net = ProtoDINO(
         backbone=backbone,
@@ -152,8 +157,7 @@ def main():
         sa_init=cfg.model.sa_init,
         learn_scale=cfg.model.learn_scale,
         pooling_method=cfg.model.pooling_method,
-        cls_head=cfg.model.cls_head,
-        pca_compare=cfg.model.pca_compare
+        cls_head=cfg.model.cls_head
     )
 
     criterion = ProtoPNetLoss(**cfg.model.losses, n_prototypes=cfg.model.n_prototypes)

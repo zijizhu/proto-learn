@@ -1,28 +1,28 @@
-from functools import partial
 from math import sqrt
-from typing import Callable
 
 import torch
 import torch.nn.functional as F
 from einops import einsum, rearrange, repeat
 from torch import nn
+from torchvision.models import resnet18, ResNet18_Weights, mobilenet_v3_small, MobileNet_V3_Small_Weights
 
-from models.utils import dist_to_similarity, momentum_update, sinkhorn_knopp
+from models.utils import momentum_update, sinkhorn_knopp
 
 
 class PaPr(nn.Module):
-    def __init__(self, backbone: Callable[..., nn.Module], q: float = 0.4):
+    def __init__(self, backbone: str, q: float = 0.4, bg_class: int = 200):
         super().__init__()
         self.q = q
-        cnn = backbone()
-        if str(cnn).startswith("ResNet"):
-            self.proposal = nn.Sequential(*list(cnn.children())[:-2])
-        elif str(cnn).startswith("MobileNetV3"):
-            self.proposal = cnn.features  # type: nn.Module
+        if backbone.lower() == "resnet18":
+            self.proposal = nn.Sequential(*list(resnet18(weights=ResNet18_Weights).children())[:-2])
+        elif backbone.lower() == "mobilenet_v3_small":
+            self.proposal = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights).features
         else:
             raise NotImplementedError
 
-    def forward(self, x: torch.Tensor, H: int = 16, W: int = 16):
+        self.bg_class = bg_class
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor, H: int = 16, W: int = 16):
         x = self.proposal(x)  # B dim h w
         x = x.mean(dim=1).unsqueeze(1)  # B 1 h w
         x = F.interpolate(x, size=(H, W,), mode="bicubic", align_corners=True)  # B 1 H W
@@ -32,28 +32,51 @@ class PaPr(nn.Module):
         masks = torch.ge(x, other=quantiles)
         masks = rearrange(masks, "B (H W) -> B H W", H=H, W=W)
 
-        return masks
+        pseudo_patch_labels = torch.where(masks, input=repeat(y, "B -> B H W", H=H, W=W), other=self.bg_class)
+
+        return pseudo_patch_labels
+
+
+class PCA(nn.Module):
+    def __init__(self, compare_fn: str = "le", threshold: float = 0.5, n_components: int = 1, bg_class: int = 200) -> None:
+        super().__init__()
+        self.compare_fn = torch.ge if compare_fn == "ge" else torch.le
+        self.threshold = threshold
+        self.n_components = n_components
+        self.bg_class = bg_class
+    
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        B, n_patches, dim = x.shape
+        H = W = int(sqrt(n_patches))
+        U, _, _ = torch.pca_lowrank(
+            x.reshape(-1, dim),
+            q=self.n_components, center=True, niter=10
+        )
+        U_scaled = (U - U.min()) / (U.max() - U.min()).squeeze()  # shape: [B*H*W, 1]
+        U_scaled = U_scaled.reshape(B, H, W)
+
+        pseudo_patch_labels = torch.where(
+            self.compare_fn(U_scaled, other=self.threshold),
+            repeat(y, "B -> B H W", H=H, W=W),
+            self.bg_class
+        )
+
+        return pseudo_patch_labels.to(dtype=torch.long)  # B H W
 
 
 class ProtoDINO(nn.Module):
     def __init__(self, backbone: nn.Module, pooling_method: str, cls_head: str, fg_extractor: nn.Module,
-                 *, learn_scale: bool = False, metric: str = "cos", gamma: float = 0.999, n_prototypes: int = 5, n_classes: int = 200,
-                 pca_compare: str = "le", pca_threshold: float = 0.5, scale_init: float = 4.0, sa_init: float = 0.5, dim: int = 768):
+                 *, learn_scale: bool = False, gamma: float = 0.999, n_prototypes: int = 5, n_classes: int = 200,
+                 scale_init: float = 4.0, sa_init: float = 0.5, dim: int = 768):
         super().__init__()
         self.gamma = gamma
         self.n_prototypes = n_prototypes
         self.n_classes = n_classes
         self.C = n_classes + 1
-        self.pca_fg_threshold = pca_threshold
         self.backbone = backbone
 
         self.fg_extractor = fg_extractor
 
-        assert pca_compare in ["ge", "le"]
-        self.pca_compare_fn = partial(torch.ge if pca_compare =="ge" else torch.le, other=pca_threshold)
-
-        assert metric in ["l2", "cos"]
-        self.metric = metric
         self.dim = dim
         self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.dim))
 
@@ -89,7 +112,7 @@ class ProtoDINO(nn.Module):
                           patch_tokens: torch.Tensor,
                           patch_prototype_logits: torch.Tensor,
                           patch_labels: torch.Tensor,
-                          labels: torch.Tensor,
+                          bg_class: float | torch.Tensor,
                           *,
                           gamma: float = 0.999,
                           use_gumbel: bool = False):
@@ -122,7 +145,7 @@ class ProtoDINO(nn.Module):
         part_assignment_maps = torch.empty_like(patch_labels_flat)
         L_c_dict = dict()  # type: dict[str, torch.Tensor]
         
-        for c_i, c in enumerate(patch_labels.unique().tolist()):
+        for c in patch_labels.unique().tolist():
             class_fg_mask = patch_labels_flat == c  # shape: [B*H*W,]
             I_c = patches_flat[class_fg_mask]  # shape: [N, dim]
             L_c = L[class_fg_mask, c, :]  # shape: [N, K,]
@@ -135,31 +158,16 @@ class ProtoDINO(nn.Module):
 
             P_new[c, ...] = momentum_update(P_c_old, P_c_new, momentum=gamma)
 
-            part_assignment_maps[class_fg_mask] = L_c_assignment_indices
+            if c == bg_class:
+                part_assignment_maps[class_fg_mask] = c * K  # no need to optimize prototypes for background class
+            else:
+                part_assignment_maps[class_fg_mask] = L_c_assignment_indices + c * K
 
             L_c_dict[c] = L_c_assignment
 
         part_assignment_maps = rearrange(part_assignment_maps, "(B H W) -> B (H W)", B=B, H=H, W=W)
 
         return part_assignment_maps, P_new, L_c_dict
-
-    def get_foreground_by_PCA(self, patch_tokens: torch.Tensor, labels: torch.Tensor):
-        B, n_patches, dim = patch_tokens.shape
-        H = W = int(sqrt(n_patches))
-        U, _, _ = torch.pca_lowrank(
-            patch_tokens.reshape(-1, self.dim),
-            q=1, center=True, niter=10
-        )
-        U_scaled = (U - U.min()) / (U.max() - U.min()).squeeze()  # shape: [B*H*W, 1]
-        U_scaled = U_scaled.reshape(B, H, W)
-
-        pseudo_patch_labels = torch.where(
-            self.pca_compare_fn(U_scaled),
-            repeat(labels, "B -> B H W", H=H, W=W),
-            self.C - 1
-        )
-
-        return pseudo_patch_labels.to(dtype=torch.long)  # shape: [B, H, W,]
 
     def get_foreground_by_similarity(self, patch_prototype_logits: torch.Tensor, labels: torch.Tensor):
         B, n_patches, C, K = patch_prototype_logits.shape
@@ -186,12 +194,7 @@ class ProtoDINO(nn.Module):
         patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
         prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
 
-        if self.metric == "l2":
-            patch_prototype_dists = torch.cdist(patch_tokens_norm, rearrange(self.prototypes, "C K dim -> (C K) dim"), p=2)
-            patch_prototype_logits = dist_to_similarity(patch_prototype_dists)
-            patch_prototype_logits = rearrange(patch_prototype_logits, "B n_patches (C K) -> B n_patches C K", C=self.C, K=self.n_prototypes)
-        else:
-            patch_prototype_logits = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
+        patch_prototype_logits = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
 
         if self.pooling_method == "max":
             image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,], C=n_classes+1
@@ -221,18 +224,19 @@ class ProtoDINO(nn.Module):
         )
 
         if labels is not None:
-            # pseudo_patch_labels = self.get_foreground_by_PCA(patch_tokens.detach(), labels=labels)
-            B, n_patches, C, K = patch_prototype_logits.shape
-            H = W = int(sqrt(n_patches))
-            masks = self.fg_extractor(x)
-            pseudo_patch_labels = torch.where(masks, input=repeat(labels, "B -> B H W", H=H, W=W), other=self.C - 1)
+            pseudo_patch_labels = self.fg_extractor(patch_tokens_norm.detach(), labels)
+            # # pseudo_patch_labels = self.get_foreground_by_PCA(patch_tokens.detach(), labels=labels)
+            # B, n_patches, C, K = patch_prototype_logits.shape
+            # H = W = int(sqrt(n_patches))
+            # masks = self.fg_extractor(x)
+            # pseudo_patch_labels = torch.where(masks, input=repeat(labels, "B -> B H W", H=H, W=W), other=self.C - 1)
 
             part_assignment_maps, new_prototypes, L_c_dict = self.online_clustering(
                 prototypes=self.prototypes,
                 patch_tokens=patch_tokens_norm.detach(),
                 patch_prototype_logits=patch_prototype_logits.detach(),
                 patch_labels=pseudo_patch_labels,
-                labels=labels,
+                bg_class=self.C - 1,
                 gamma=self.gamma,
                 use_gumbel=use_gumbel
             )
@@ -255,6 +259,7 @@ class ProtoPNetLoss(nn.Module):
             self,
             l_orth_coef: float,
             l_clst_coef: float,
+            l_patch_coef: float,
             l_sep_coef: float,
             num_classes: int = 200,
             n_prototypes: int = 5
@@ -262,6 +267,7 @@ class ProtoPNetLoss(nn.Module):
         super().__init__()
         self.l_orth_coef = l_orth_coef
         self.l_clst_coef = l_clst_coef
+        self.l_patch_coef = l_patch_coef
         self.l_sep_coef = l_sep_coef
         self.xe = nn.CrossEntropyLoss()
 
@@ -270,11 +276,17 @@ class ProtoPNetLoss(nn.Module):
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: tuple[torch.Tensor, ...]):
         logits, similarities = outputs["class_logits"], outputs["image_prototype_logits"]
+        patch_prototype_logits = outputs["patch_prototype_logits"]
         features, part_assignment_maps, fg_masks = outputs["patches"], outputs["part_assignment_maps"], outputs["pseudo_patch_labels"]
         _, labels, _, _ = batch
 
         loss_dict = dict()
         loss_dict["l_y"] = self.xe(logits, labels)
+
+        if self.l_patch_coef != 0:
+            l_patch = self.compute_patch_contrastive_cost(patch_prototype_logits, part_assignment_maps)
+            loss_dict["l_patch"] = self.l_patch_coef * l_patch
+            loss_dict["_l_patch_raw"] = l_patch
 
         if self.l_orth_coef != 0:
             l_orth = self.compute_orthogonality_costs(
@@ -295,6 +307,13 @@ class ProtoPNetLoss(nn.Module):
             loss_dict["_l_sep_raw"] = l_sep
 
         return loss_dict
+
+    @staticmethod
+    def compute_patch_contrastive_cost(patch_prototype_logits: torch.Tensor,
+                                       patch_prototype_assignments: torch.Tensor):
+        patch_prototype_logits = rearrange(patch_prototype_logits, "B N C K -> B (C K) N")
+        loss = F.cross_entropy(patch_prototype_logits, target=patch_prototype_assignments)
+        return loss
     
     @staticmethod
     def compute_orthogonality_costs(features: torch.Tensor,
