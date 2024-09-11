@@ -259,7 +259,9 @@ class ProtoPNetLoss(nn.Module):
             l_patch_coef: float,
             l_sep_coef: float,
             num_classes: int = 200,
-            n_prototypes: int = 5
+            n_prototypes: int = 5,
+            temperature: float = 0.1,
+            bg_class_weight: float = 0.1
         ) -> None:
         super().__init__()
         self.l_orth_coef = l_orth_coef
@@ -270,6 +272,8 @@ class ProtoPNetLoss(nn.Module):
 
         self.C = num_classes
         self.K = n_prototypes
+        self.class_weights = torch.tensor([1] * self.C * self.K + [bg_class_weight] * self.K)
+        self.temperature = temperature
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: tuple[torch.Tensor, ...]):
         logits, similarities = outputs["class_logits"], outputs["image_prototype_logits"]
@@ -284,7 +288,8 @@ class ProtoPNetLoss(nn.Module):
             l_patch = self.compute_patch_contrastive_cost(
                 patch_prototype_logits,
                 part_assignment_maps,
-                class_weight=torch.tensor([1] * self.C * self.K + [0.1] * self.K, dtype=torch.float32, device=logits.device)
+                class_weight=self.class_weights.to(dtype=torch.float32, device=logits.device),
+                temperature=self.temperature
             )
             loss_dict["l_patch"] = self.l_patch_coef * l_patch
             loss_dict["_l_patch_raw"] = l_patch
@@ -312,8 +317,9 @@ class ProtoPNetLoss(nn.Module):
     @staticmethod
     def compute_patch_contrastive_cost(patch_prototype_logits: torch.Tensor,
                                        patch_prototype_assignments: torch.Tensor,
-                                       class_weight: torch.Tensor):
-        patch_prototype_logits = rearrange(patch_prototype_logits, "B N C K -> B (C K) N") / 0.1
+                                       class_weight: torch.Tensor,
+                                       temperature: float = 0.1):
+        patch_prototype_logits = rearrange(patch_prototype_logits, "B N C K -> B (C K) N") / temperature
         loss = F.cross_entropy(patch_prototype_logits, target=patch_prototype_assignments, weight=class_weight)
         return loss
     

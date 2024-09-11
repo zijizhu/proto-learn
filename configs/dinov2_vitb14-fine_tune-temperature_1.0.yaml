@@ -2,7 +2,7 @@ model:
   name: dinov2_vitb14_reg4
   tuning: block_expansion
   n_splits: 3
-  gamma: 0.999
+  gamma: 0.99
   n_prototypes: 5
   pooling_method: max
   cls_head: sa
@@ -12,18 +12,18 @@ model:
   fg_extractor: "PCA"
   fg_extractor_args:
     compare_fn: "le"
-    threshold: 0.7
+    threshold: 0.5
   losses:
     l_patch_coef: 0.1
     l_orth_coef: 0
     l_clst_coef: 0
     l_sep_coef: 0
-    temperature: 0.1
+    temperature: 1.0
     bg_class_weight: 0.1
 dataset:
   augmentation: true
 optim:
-  epochs: 2
+  epochs: 3
   backbone_lr: 0.005
   fc_lr: 1.0e-06
   scale_lr: 1.0e-4
@@ -31,8 +31,10 @@ optim:
   fine_tuning_epochs:
     - 0
     - 1
+    - 2
 debug:
   epochs:
   - 0
   - 1
+  - 2
 seed: 42
