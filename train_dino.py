@@ -98,6 +98,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     cfg, log_dir, resume_ckpt = setup_config_and_logging(name="train", base_log_dir="logs")
+    print(resume_ckpt)
 
     logger = logging.getLogger(__name__)
 
@@ -188,7 +189,7 @@ def main():
             optimizer = None
             net.optimizing_prototypes = True
 
-        if epoch > 0:
+        if (epoch > 0) or (resume_ckpt is not None):
             net.initializing = False
 
         print_parameters(net=net, logger=logger)

@@ -166,21 +166,18 @@ class ProtoDINO(nn.Module):
 
         return part_assignment_maps, P_new, L_c_dict
 
-    def get_foreground_by_similarity(self, patch_prototype_logits: torch.Tensor, labels: torch.Tensor):
-        B, n_patches, C, K = patch_prototype_logits.shape
-        H = W = int(sqrt(n_patches))
+    def get_fg_by_similarity(self, patch_prototype_logits: torch.Tensor, labels: torch.Tensor):
+        batch_size, n_pathes, C, K = patch_prototype_logits.shape
+        H = W = int(sqrt(n_pathes))
 
-        patch_gt_class_logits = patch_prototype_logits.sum(dim=-1)[torch.arange(B), :, labels]
-        patch_bg_class_logits = patch_prototype_logits.sum(dim=-1)[torch.arange(B), :, torch.full_like(labels, self.C - 1)]
+        fg_logits = F.normalize(patch_prototype_logits[torch.arange(batch_size), :, labels, :].sum(dim=-1), p=1, dim=-1)
+        bg_logits = F.normalize(patch_prototype_logits[torch.arange(batch_size), :, torch.full_like(labels, -1), :].sum(dim=-1), p=1, dim=-1)
+        fg_logits, bg_logits = rearrange(fg_logits, "B (H W) -> B H W", H=H, W=W), rearrange(bg_logits, "B (H W) -> B H W", H=H, W=W)
 
-        pseudo_patch_labels = torch.where(
-            torch.gt(patch_gt_class_logits, patch_bg_class_logits),
-            repeat(labels, "B -> B n_patches", n_patches=n_patches),
-            self.C - 1
-        )
-        pseudo_patch_labels = rearrange(pseudo_patch_labels, "B (H W) -> B H W", H=H, W=W)
+        stacked = torch.stack([bg_logits, fg_logits], dim=-1)
+        fg_mask = F.softmax(stacked, dim=-1).max(dim=-1).indices.to(torch.bool)  # B H W
 
-        return pseudo_patch_labels  # shape: [B, H, W,]
+        return torch.where(fg_mask, repeat(labels, "B -> B H W", H=H, W=W), C-1)
 
     def forward(self, x: torch.Tensor, labels: torch.Tensor | None = None,
                 *, use_gumbel: bool = False):
@@ -221,12 +218,13 @@ class ProtoDINO(nn.Module):
         )
 
         if labels is not None:
-            pseudo_patch_labels = self.fg_extractor(patch_tokens_norm.detach(), labels)
-            # # pseudo_patch_labels = self.get_foreground_by_PCA(patch_tokens.detach(), labels=labels)
-            # B, n_patches, C, K = patch_prototype_logits.shape
-            # H = W = int(sqrt(n_patches))
-            # masks = self.fg_extractor(x)
-            # pseudo_patch_labels = torch.where(masks, input=repeat(labels, "B -> B H W", H=H, W=W), other=self.C - 1)
+            if self.initializing:
+                pseudo_patch_labels = self.fg_extractor(patch_tokens_norm.detach(), labels)
+            else:
+                pseudo_patch_labels = self.get_fg_by_similarity(
+                    patch_prototype_logits=patch_prototype_logits.detach(),
+                    labels=labels
+                )
 
             part_assignment_maps, new_prototypes, L_c_dict = self.online_clustering(
                 prototypes=self.prototypes,
