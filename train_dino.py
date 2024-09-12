@@ -98,7 +98,6 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     cfg, log_dir, resume_ckpt = setup_config_and_logging(name="train", base_log_dir="logs")
-    print(resume_ckpt)
 
     logger = logging.getLogger(__name__)
 
