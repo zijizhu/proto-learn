@@ -277,7 +277,7 @@ class ProtoPNetLoss(nn.Module):
         logits, similarities = outputs["class_logits"], outputs["image_prototype_logits"]
         patch_prototype_logits = outputs["patch_prototype_logits"]
         features, part_assignment_maps, fg_masks = outputs["patches"], outputs["part_assignment_maps"], outputs["pseudo_patch_labels"]
-        _, labels, _, _ = batch
+        _, labels, _ = batch
 
         loss_dict = dict()
         loss_dict["l_y"] = self.xe(logits, labels)
