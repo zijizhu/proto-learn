@@ -179,7 +179,10 @@ def main():
             param_groups += [{'params': net.sa, 'lr': cfg.optim.fc_lr}] if cfg.model.cls_head == "sa" else []
             param_groups += [{'params': net.scale, 'lr': cfg.optim.scale_lr}] if cfg.model.learn_scale else []
             optimizer = optim.SGD(param_groups, momentum=0.9)
-            net.optimizing_prototypes = False
+            if cfg.model.get("always_optimize_prototypes", False):
+                net.optimizing_prototypes = True
+            else:
+                net.optimizing_prototypes = False
         else:
             for params in net.parameters():
                 params.requires_grad = False
