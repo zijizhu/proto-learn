@@ -17,7 +17,6 @@ from torchvision.transforms.functional import to_tensor
 class CUBDataset(ImageFolder):
     def __init__(self,
                  root: str,
-                 attribute_label_path: str,
                  transforms: Optional[Callable] = None,
                  target_transform: Optional[Callable] = None):
         super().__init__(
@@ -25,18 +24,16 @@ class CUBDataset(ImageFolder):
             transform=transforms,
             target_transform=target_transform
         )
-        attributes_np = np.loadtxt(attribute_label_path)
-        self.attributes = F.normalize(torch.tensor(attributes_np, dtype=torch.float32), p=2, dim=-1)
 
     def __getitem__(self, index: int):
         im_path, label = self.samples[index]
         im_pt = self.transform(Image.open(im_path).convert("RGB"))
-        return im_pt, label, self.attributes[label, :], index
+        return im_pt, label, index
 
 
 class CUBEvalDataset(ImageFolder):
     def __init__(self,
-                 root: str,
+                 images_root: str,
                  annotations_root: str,
                  normalization: bool = True,
                  input_size: int = 224):
@@ -44,7 +41,7 @@ class CUBEvalDataset(ImageFolder):
         transforms += [A.Normalize(mean=(0.485, 0.456, 0.406,), std=(0.229, 0.224, 0.225,))] if normalization else []
 
         super().__init__(
-            root=root,
+            root=images_root,
             transform=A.Compose(
                 transforms,
                 keypoint_params=A.KeypointParams(
@@ -56,6 +53,7 @@ class CUBEvalDataset(ImageFolder):
             ),
             target_transform=None
         )
+        self.input_size = input_size
         annotations_root = Path("datasets") / "CUB_200_2011"
 
         path_df = pd.read_csv(annotations_root / "images.txt", header=None, names=["image_id", "image_path"], sep=" ")
@@ -78,12 +76,12 @@ class CUBEvalDataset(ImageFolder):
         keypoints = self.part_loc_df[mask][["kp_x", "kp_y"]].values
 
         keypoints_cropped = [crop_keypoint_by_coords(keypoint=tuple(kp) + (None, None,), crop_coords=bbox_coords[:2]) for kp in keypoints]
-        keypoints_cropped = [(max(x, 0), max(y, 0),) for x, y, _, _ in keypoints_cropped]
+        keypoints_cropped = [(np.clip(x, 0, self.input_size), np.clip(y, 0, self.input_size),) for x, y, _, _ in keypoints_cropped]
         
         transformed = self.transform(image=im, keypoints=keypoints_cropped)
         transformed_im, transformed_keypoints = transformed["image"], transformed["keypoints"]
         
-        return to_tensor(transformed_im), torch.tensor(transformed_keypoints), label, self.attributes[label, :], index
+        return to_tensor(transformed_im), torch.tensor(transformed_keypoints, dtype=torch.float32), label, self.attributes[label, :], index
 
 
 class CUBFewShotDataset(ImageFolder):

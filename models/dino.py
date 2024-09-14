@@ -121,8 +121,8 @@ class ProtoDINO(nn.Module):
         patch-prototype logits, labels, and patch labels.
 
         Args:
-            prototypes: A tensor of shape [C, K, dim,], representing K prototypes for each of C classes.
-            patch_tokens: A tensor of shape [B, n_patches, dim,].
+            prototypes (torch.Tensor): A tensor of shape [C, K, dim,], representing K prototypes for each of C classes.
+            patch_tokens: A tensor of shape [B, n_patches, dim,], which is the feature from backbone.
             patch_prototype_logits: The logits between patches and prototypes of shape [B, n_patches, C, K].
             patch_labels: A tensor of shape [B, H, W,] of type torch.long representing the (generated) patch-level class labels.
             labels: A tensor of shape [B,] of type torch.long representing the image-level class labels.

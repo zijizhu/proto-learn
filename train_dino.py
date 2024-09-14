@@ -30,7 +30,7 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
 
     for i, batch in enumerate(tqdm(dataloader)):
         batch = tuple(item.to(device) for item in batch)
-        images, labels, _, sample_indices = batch
+        images, labels, sample_indices = batch
 
         outputs = model(images, labels=labels)
 
@@ -73,7 +73,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
 
     for i, batch in enumerate(tqdm(dataloader)):
         batch = tuple(item.to(device) for item in batch)
-        images, labels, _, sample_indices = batch
+        images, labels, sample_indices = batch
 
         outputs = model(images, labels=labels)
 
@@ -115,14 +115,12 @@ def main():
     attribute_labels_path = Path("datasets") / "class_attribute_labels_continuous.txt"
     training_set_path = "train_cropped_augmented" if cfg.dataset.augmentation else "train_cropped"
     dataset_train = CUBDataset((dataset_dir / training_set_path).as_posix(),
-                               attribute_labels_path.as_posix(),
                                transforms=transforms)
     dataset_train_few_shot  = CUBFewShotDataset((dataset_dir / training_set_path).as_posix(),
                                  n_samples_per_class=10,
                                  attribute_label_path=attribute_labels_path,
                                  transforms=transforms)
     dataset_test = CUBDataset((dataset_dir / "test_cropped").as_posix(),
-                              attribute_labels_path.as_posix(),
                               transforms=transforms)
     if cfg.get("few_shot", False):
         dataloader_train = DataLoader(dataset=dataset_train_few_shot, batch_size=128, num_workers=8, shuffle=True)

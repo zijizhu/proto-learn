@@ -8,6 +8,7 @@ import lightning as L
 import torch
 import torch.nn.functional as F
 from einops import rearrange, repeat
+from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
@@ -17,13 +18,26 @@ from tqdm import tqdm
 from cub_dataset import CUBEvalDataset
 from eval.consistency import evaluate_consistency
 from models.backbone import DINOv2BackboneExpanded, MaskCLIP
-from models.dino import ProtoDINO, PaPr, PCA
+from models.dino import PCA, PaPr, ProtoDINO
 from utils.config import load_config_and_logging
 from utils.visualization import (
     visualize_prototype_assignments,
     visualize_prototype_part_keypoints,
     visualize_topk_prototypes,
 )
+
+N_KEYPOINTS = 15
+
+
+@torch.no_grad()
+def get_attn_maps(model: nn.Module, images: torch.Tensor, labels: torch.Tensor, K: int = 5):
+    patch_prototype_logits = model(images)["patch_prototype_logits"]  # type: torch.Tensor
+
+    batch_size, n_patches, C, K = patch_prototype_logits.shape
+    H = W = int(sqrt(n_patches))
+
+    patch_prototype_logits = rearrange(patch_prototype_logits, "B (H W) C K -> B C K H W", H=H, W=W)
+    return patch_prototype_logits[torch.arange(labels.numel()), labels, ...]  # B K H W
 
 
 def in_bbox(keypoint: tuple[float, float], bbox: tuple[float, float, float, float]):
@@ -48,11 +62,80 @@ def compute_part_vectors(activation_maps: torch.Tensor, keypoints: torch.Tensor,
     return torch.stack(part_vectors), kp_visibility, bboxes
 
 
+def eval_nmi_ari(net: nn.Module, dataloader: DataLoader, device: str = "cpu"):
+    """
+    Get Normalized Mutual Information, Adjusted Rand Index for given method
+
+    Parameters
+    ----------
+    net: nn.Module
+        The trained net to evaluate
+    data_loader: DataLoader
+        The dataset to evaluate
+    device: str
+
+    Returns
+    ----------
+    nmi: float
+        Normalized Mutual Information between predicted parts and gt parts as %
+    ari: float
+        Adjusted Rand Index between predicted parts and gt parts as %
+    """
+    device = torch.device(device)
+
+    all_class_ids = []
+    all_keypoint_part_assignments = []
+    all_ground_truths = []
+
+    for batch in tqdm(dataloader):
+        batch = tuple(item.to(device) for item in batch)  # type: tuple[torch.Tensor, ...]
+        images, keypoints, labels, attributes, sample_indices = batch
+        batch_size, _, input_h, input_w = images.shape
+
+        attn_maps = get_attn_maps(model=net, images=images, labels=labels)
+        attn_maps_resized = F.interpolate(attn_maps, size=(input_h, input_w,), mode='bilinear', align_corners=False)
+
+        kp_visibilities = (keypoints.sum(dim=-1) > 0).to(dtype=torch.bool)
+        keypoints = keypoints.clone()[..., None, :]  # B, N_KEYPOINTS, 1, 2
+
+        keypoints /= torch.tensor([input_w, input_h]).to(dtype=torch.float32, device=device)
+        keypoints = keypoints * 2 - 1  # map keypoints from range [0, 1] to [-1, 1]
+
+        keypoint_part_logits = F.grid_sample(attn_maps_resized, keypoints, mode='nearest', align_corners=False)  # B K N_KEYPOINTS, 1
+        keypoint_part_assignments = torch.argmax(keypoint_part_logits, dim=1).squeeze()  # B N_KEYPOINTS
+
+        for assignments, is_visible, class_id in zip(keypoint_part_assignments.unbind(dim=0), kp_visibilities.unbind(dim=0), labels):
+            all_keypoint_part_assignments.append(assignments[is_visible])
+            all_class_ids.append(torch.stack([class_id] * is_visible.sum()))
+            all_ground_truths.append(torch.arange(N_KEYPOINTS)[is_visible])
+    
+    
+    all_class_ids = torch.cat(all_class_ids, axis=0)
+    all_keypoint_part_assignments_np = torch.cat(all_keypoint_part_assignments, axis=0)
+    all_ground_truths = torch.cat(all_ground_truths, axis=0)
+
+    all_classes_nmi, all_classes_ari = [], []
+
+    for c in torch.unique(all_class_ids):
+        mask = all_class_ids == c
+        kp_part_assignment_c = all_keypoint_part_assignments_np[mask].flatten()
+        ground_truths_c = all_ground_truths[mask].flatten()
+
+        nmi = normalized_mutual_info_score(kp_part_assignment_c, ground_truths_c)
+        ari = adjusted_rand_score(kp_part_assignment_c, ground_truths_c)
+
+        all_classes_nmi.append(nmi)
+        all_classes_ari.append(ari)
+
+    return sum(all_classes_nmi) / len(all_classes_nmi), sum(all_classes_ari) / len(all_classes_nmi)
+
+
 @torch.inference_mode()
 def eval_consistency(net: nn.Module, dataloader: DataLoader, writer: SummaryWriter,
                      *,
                      K: int = 5, C: int = 200, N_PARTS: int = 15, H_b: int = 72, W_b: int = 72,
                      INPUT_SIZE: int = 224, threshold: float = 0.8, device: str | torch.device = "cpu"):
+    """Deprecated in favour of original implementation"""
     net.eval()
     O_p, O_sum = torch.zeros((C, K, N_PARTS,), dtype=torch.long, device=device), torch.zeros((C, K, N_PARTS,), dtype=torch.long, device=device)
 
@@ -174,10 +257,14 @@ def main():
     net.to(device)
     
     writer = SummaryWriter(log_dir=log_dir)
+
     logger.info("Evaluating accuracy...")
     eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
-
-    logger.info("Evaluating consistency...")
+    
+    logger.info("Evaluating class-wise NMI and ARI...")
+    mean_nmi, mean_ari = eval_nmi_ari(net=net, dataloader=dataloader_eval, device=device)
+    logger.info(f"Mean class-wise NMI: {float(mean_nmi)}")
+    logger.info(f"Mean class-wise ARI: {float(mean_ari)}")
 
     # Monkey-patch the model class to make it compatible with eval script
     ProtoDINO.push_forward = push_forward
@@ -188,6 +275,7 @@ def main():
     args.test_batch_size = 64
     args.nb_classes = 200
 
+    logger.info("Evaluating consistency...")
     consistency_score = evaluate_consistency(net, args)
     logger.info(f"Network consistency score: {consistency_score.item()}")
 

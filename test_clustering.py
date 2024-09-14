@@ -5,7 +5,7 @@ import lightning as L
 import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
-from einops import repeat, rearrange
+from einops import repeat
 from PIL import Image
 from torch import nn
 
@@ -22,7 +22,7 @@ STD = (0.229, 0.224, 0.225,)
 INPUT_SIZE = 224
 BATCH_SIZE = 16
 
-N_PROTOTYPES = 5
+N_PROTOTYPES = 10
 DIM = 768
 GAMMA = 0.2  # coefficient of OLD value
 

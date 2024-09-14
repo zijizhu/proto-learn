@@ -14,7 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 def overlay_attn_map(attn_map: np.ndarray, im: Image.Image):
     """
-    attn_map: np.ndarray of shape (H, W,), same as im, values can be unormalized
+    attn_map: np.ndarray of shape `(H, W,)`, same as im, values can be unormalized
     im: a PIL image of width H and height W
     """
     im = np.array(im.resize((224, 224), Image.BILINEAR))
