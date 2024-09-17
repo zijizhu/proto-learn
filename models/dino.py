@@ -66,8 +66,8 @@ class PCA(nn.Module):
 
 class ProtoDINO(nn.Module):
     def __init__(self, backbone: nn.Module, pooling_method: str, cls_head: str, fg_extractor: nn.Module,
-                 *, learn_scale: bool = False, gamma: float = 0.999, n_prototypes: int = 5, n_classes: int = 200,
-                 scale_init: float = 4.0, sa_init: float = 0.5, dim: int = 768):
+                 *, gamma: float = 0.999, n_prototypes: int = 5, n_classes: int = 200,
+                 temperature: float = 0.2, sa_init: float = 0.5, dim: int = 768):
         super().__init__()
         self.gamma = gamma
         self.n_prototypes = n_prototypes
@@ -79,11 +79,7 @@ class ProtoDINO(nn.Module):
 
         self.dim = dim
         self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.dim))
-
-        if learn_scale:
-            self.scale = nn.Parameter(torch.tensor(scale_init, dtype=torch.float32))
-        else:
-            self.register_buffer("scale", torch.tensor(scale_init, dtype=torch.float32))
+        self.register_buffer("temperature", torch.tensor(temperature))
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
 
@@ -199,17 +195,17 @@ class ProtoDINO(nn.Module):
 
         if self.cls_head == "sa" and self.sa is not None:
             sa_weights = F.softmax(self.sa, dim=-1) * self.n_prototypes
-            image_prototype_logits_weighted = self.scale * image_prototype_logits[:, :-1, :] * sa_weights
-            class_logits = image_prototype_logits_weighted.sum(-1)
+            image_prototype_logits_weighted = image_prototype_logits[:, :-1, :] * sa_weights
+            class_logits = image_prototype_logits_weighted.sum(-1) / self.temperature
         elif self.cls_head == "fc" and self.fc is not None:
             image_prototype_logits_flat = rearrange(image_prototype_logits[:, :-1, :], "B n_classes K -> B (n_classes K)")
-            class_logits = self.fc(image_prototype_logits_flat.detach())  # shape: [B, n_classes,]
+            class_logits = self.fc(image_prototype_logits_flat.detach()) / self.temperature  # shape: [B, n_classes,]
         elif self.cls_head == "mean":
             class_logits = image_prototype_logits.mean(-1)  # shape: [B, C,]
-            class_logits = class_logits[:, :-1]
+            class_logits = class_logits[:, :-1] / self.temperature
         else:
             class_logits = image_prototype_logits.sum(-1)  # shape: [B, C,]
-            class_logits = class_logits[:, :-1]
+            class_logits = class_logits[:, :-1] / self.temperature
 
         outputs = dict(
             patch_prototype_logits=patch_prototype_logits,  # shape: [B, n_patches, C, K,]

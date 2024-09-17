@@ -149,11 +149,10 @@ def main():
         fg_extractor=fg_extractor,
         n_prototypes=cfg.model.n_prototypes,
         gamma=cfg.model.get("gamma", 0.99),
-        scale_init=cfg.model.scale_init,
-        sa_init=cfg.model.sa_init,
-        learn_scale=cfg.model.learn_scale,
+        temperature=cfg.model.temperature,
         pooling_method=cfg.model.pooling_method,
-        cls_head=cfg.model.cls_head
+        cls_head=cfg.model.cls_head,
+        sa_init=cfg.model.sa_init
     )
     if resume_ckpt:
         state_dict = torch.load(resume_ckpt, map_location="cpu")
@@ -177,7 +176,6 @@ def main():
 
             param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}]
             param_groups += [{'params': net.sa, 'lr': cfg.optim.fc_lr}] if cfg.model.cls_head == "sa" else []
-            param_groups += [{'params': net.scale, 'lr': cfg.optim.scale_lr}] if cfg.model.learn_scale else []
             optimizer = optim.SGD(param_groups, momentum=0.9)
             if cfg.model.get("always_optimize_prototypes", False):
                 net.optimizing_prototypes = True
