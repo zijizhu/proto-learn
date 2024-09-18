@@ -118,8 +118,8 @@ def eval_nmi_ari(net: nn.Module, dataloader: DataLoader, device: str = "cpu"):
 
     for c in torch.unique(all_class_ids):
         mask = all_class_ids == c
-        kp_part_assignment_c = all_keypoint_part_assignments_np[mask].flatten()
-        ground_truths_c = all_ground_truths[mask].flatten()
+        kp_part_assignment_c = all_keypoint_part_assignments_np[mask].flatten().cpu().numpy()
+        ground_truths_c = all_ground_truths[mask].flatten().cpu().numpy()
 
         nmi = normalized_mutual_info_score(kp_part_assignment_c, ground_truths_c)
         ari = adjusted_rand_score(kp_part_assignment_c, ground_truths_c)

@@ -5,34 +5,28 @@ model:
   gamma: 0.99
   n_prototypes: 5
   pooling_method: max
+  temperature: 0.2
   cls_head: sa
-  learn_scale: true
-  scale_init: 1.0
   sa_init: 0.5
   fg_extractor: "PCA"
   fg_extractor_args:
     compare_fn: "le"
     threshold: 0.5
   losses:
-    l_patch_coef: 0.1
+    l_patch_coef: 0
     l_orth_coef: 0
     l_clst_coef: 0
     l_sep_coef: 0
-    temperature: 0.5
-    bg_class_weight: 0.1
+  always_optimize_prototypes: false
 dataset:
   augmentation: true
 optim:
-  epochs: 2
+  epochs: 1
   backbone_lr: 0.005
   fc_lr: 1.0e-06
-  scale_lr: 1.0e-4
   scheduler: null
-  fine_tuning_epochs:
-    - 0
-    - 1
+  fine_tuning_epochs: []
 debug:
   epochs:
   - 0
-  - 1
 seed: 42
