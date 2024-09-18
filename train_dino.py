@@ -14,7 +14,7 @@ from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from models.dino import ProtoDINO, ProtoPNetLoss, PaPr, PCA
-from models.backbone import DINOv2BackboneExpanded, MaskCLIP
+from models.backbone import DINOv2BackboneExpanded, MaskCLIP, DINOv2Backbone
 from cub_dataset import CUBDataset, CUBFewShotDataset
 from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
 from utils.config import setup_config_and_logging
@@ -52,7 +52,7 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
             visualize_topk_prototypes(outputs, batch_im_paths, writer, step=epoch, input_size=input_size,
                                       tag_fmt_str="Training first batch top{topk} prototypes/epoch {step}/{idx}")
-            visualize_prototype_assignments(outputs, labels, writer, step=epoch,
+            visualize_prototype_assignments(outputs, writer, step=epoch,
                                             tag=f"Training first batch prototype assignments/epoch {epoch}")
 
     for k, v in running_losses.items():
@@ -129,7 +129,10 @@ def main():
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=8, shuffle=True)
 
     if "dino" in cfg.model.name:
-        backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
+        if cfg.model.n_splits and cfg.model.n_splits > 0:
+            backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
+        else:
+            backbone = DINOv2Backbone(name=cfg.model.name)
         dim = backbone.dim
     elif cfg.model.name.lower().startswith("clip"):
         backbone = MaskCLIP(name=cfg.model.name.split("-", 1)[1])

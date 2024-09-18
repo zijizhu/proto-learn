@@ -80,29 +80,24 @@ def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
     return figures
 
 
-def visualize_prototype_assignments(outputs: dict[str, torch.Tensor], labels: torch.Tensor, writer: SummaryWriter,
+def visualize_prototype_assignments(outputs: dict[str, torch.Tensor],writer: SummaryWriter,
                                     tag: str, step: int, figsize: tuple[int, int] = (10, 12,)):
-    patch_labels = outputs["pseudo_patch_labels"].detach().clone()  # shape: [B, H, W,]
-    L_c_dict = {c: L_c.detach().clone() for c, L_c in outputs["L_c_dict"].items()}
+    assignment_maps = outputs["part_assignment_maps"].detach().clone()  # shape:  B (H W)
+    batch_size, _, C, K = outputs["patch_prototype_logits"].shape
+    batch_size, n_patches = assignment_maps.shape
+    H = W = int(sqrt(n_patches))
 
     nrows, ncols = figsize
     fig, axes = plt.subplots(nrows, ncols, figsize=(ncols, nrows,))
 
-    for b, (c, ax) in enumerate(zip(labels.cpu().tolist(), axes.flat)):
-        patch_labels_b = patch_labels[b, :, :]  # shape: [H, W,], dtype: torch.long
-        fg_mask_b = patch_labels_b != 200  # shape: [H, W,], dtype: bool
+    for b, (assign_map, ax) in enumerate(zip(assignment_maps.detach().cpu(), axes.flat)):
+        fg_mask = assign_map < ((C-1) * K)
+        
+        assign_map = torch.remainder(assign_map, K)
+        fg_assign_map = torch.where(fg_mask, assign_map, torch.full_like(assign_map, -1))
+        fg_assign_map = rearrange(fg_assign_map, " (H W) -> H W", H=H, W=W)
 
-        num_foreground_pixels = fg_mask_b.sum().cpu().item()
-
-        L_c_i = L_c_dict[c][:num_foreground_pixels]
-        L_c_dict[c] = L_c_dict[c][num_foreground_pixels:]
-        L_c_i_argmax = L_c_i.argmax(-1)  # shape: [N,]
-
-        assignment_map = torch.empty_like(fg_mask_b, dtype=torch.long)
-        assignment_map[fg_mask_b] = L_c_i_argmax
-        assignment_map[~fg_mask_b] = -1
-
-        ax.imshow((assignment_map + 1).squeeze().cpu().numpy(), cmap="tab10")
+        ax.imshow((fg_assign_map + 1).numpy(), cmap="tab10")
         ax.set_xticks([]), ax.set_yticks([])
     
     fig.tight_layout()

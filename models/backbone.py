@@ -48,8 +48,15 @@ DIM_DICT = {
 class DINOv2Backbone(nn.Module):
     def __init__(self, name: str = "dinov2_vitb14_reg"):
         super().__init__()
-        self.dino = torch.hub.load("facebookresearch/dinov2", name)
+        self.dino = torch.hub.load("facebookresearch/dinov2", name)  # type: nn.Module
         self.dim = DIM_DICT[name]
+    
+    def learnable_parameters(self):
+        return self.dino.parameters()
+    
+    def set_requires_grad(self):
+        for param in self.parameters():
+            param.requires_grad = True
 
     def forward(self, x: torch.Tensor, key: str = "x_norm_patchtokens", reshape: bool = False) -> torch.Tensor:
         feature_dict = self.dino.forward_features(x)  # type: dict[str, torch.Tensor]
