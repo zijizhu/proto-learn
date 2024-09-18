@@ -48,7 +48,7 @@ DIM_DICT = {
 class DINOv2Backbone(nn.Module):
     def __init__(self, name: str = "dinov2_vitb14_reg"):
         super().__init__()
-        self.dino = torch.hub.load("facebookresearch/dinov2", name)  # type: nn.Module
+        self.dino = torch.hub.load("facebookresearch/dinov2", name[:-1])  # type: nn.Module
         self.dim = DIM_DICT[name]
     
     def learnable_parameters(self):
