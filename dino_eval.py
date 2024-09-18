@@ -241,11 +241,10 @@ def main():
         fg_extractor=fg_extractor,
         n_prototypes=cfg.model.n_prototypes,
         gamma=cfg.model.get("gamma", 0.99),
-        scale_init=cfg.model.scale_init,
-        sa_init=cfg.model.sa_init,
-        learn_scale=cfg.model.learn_scale,
+        temperature=cfg.model.temperature,
         pooling_method=cfg.model.pooling_method,
-        cls_head=cfg.model.cls_head
+        cls_head=cfg.model.cls_head,
+        sa_init=cfg.model.sa_init
     )
     state_dict = torch.load(log_dir / "dino_v2_proto.pth", map_location="cpu")
     net.load_state_dict(state_dict=state_dict)

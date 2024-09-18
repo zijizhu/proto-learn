@@ -79,7 +79,7 @@ class ProtoDINO(nn.Module):
 
         self.dim = dim
         self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.dim))
-        self.register_buffer("temperature", torch.tensor(temperature))
+        self.temperature = temperature
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
 
@@ -196,16 +196,18 @@ class ProtoDINO(nn.Module):
         if self.cls_head == "sa" and self.sa is not None:
             sa_weights = F.softmax(self.sa, dim=-1) * self.n_prototypes
             image_prototype_logits_weighted = image_prototype_logits[:, :-1, :] * sa_weights
-            class_logits = image_prototype_logits_weighted.sum(-1) / self.temperature
+            class_logits = image_prototype_logits_weighted.sum(-1)
         elif self.cls_head == "fc" and self.fc is not None:
             image_prototype_logits_flat = rearrange(image_prototype_logits[:, :-1, :], "B n_classes K -> B (n_classes K)")
-            class_logits = self.fc(image_prototype_logits_flat.detach()) / self.temperature  # shape: [B, n_classes,]
+            class_logits = self.fc(image_prototype_logits_flat.detach())  # shape: [B, n_classes,]
         elif self.cls_head == "mean":
             class_logits = image_prototype_logits.mean(-1)  # shape: [B, C,]
-            class_logits = class_logits[:, :-1] / self.temperature
+            class_logits = class_logits[:, :-1]
         else:
             class_logits = image_prototype_logits.sum(-1)  # shape: [B, C,]
-            class_logits = class_logits[:, :-1] / self.temperature
+            class_logits = class_logits[:, :-1]
+        
+        class_logits /= self.temperature
 
         outputs = dict(
             patch_prototype_logits=patch_prototype_logits,  # shape: [B, n_patches, C, K,]
