@@ -107,7 +107,7 @@ def eval_nmi_ari(net: nn.Module, dataloader: DataLoader, device: str = "cpu"):
         for assignments, is_visible, class_id in zip(keypoint_part_assignments.unbind(dim=0), kp_visibilities.unbind(dim=0), labels):
             all_keypoint_part_assignments.append(assignments[is_visible])
             all_class_ids.append(torch.stack([class_id] * is_visible.sum()))
-            all_ground_truths.append(torch.arange(N_KEYPOINTS)[is_visible])
+            all_ground_truths.append(torch.arange(N_KEYPOINTS, device=device)[is_visible])
     
     
     all_class_ids = torch.cat(all_class_ids, axis=0)
@@ -247,7 +247,7 @@ def main():
         sa_init=cfg.model.sa_init
     )
     state_dict = torch.load(log_dir / "dino_v2_proto.pth", map_location="cpu")
-    net.load_state_dict(state_dict=state_dict)
+    net.load_state_dict(state_dict=state_dict, strict=False)
     
     net.optimizing_prototypes = False
     if cfg.optim.epochs > 1:
