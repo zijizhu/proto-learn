@@ -187,8 +187,8 @@ def eval_accuracy(model: nn.Module, dataloader: DataLoader, writer: SummaryWrite
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
             visualize_topk_prototypes(outputs, batch_im_paths, writer,
                                       tag_fmt_str="Top{topk} prototype/eval/batch {step}/{idx}", step=i)
-            visualize_prototype_assignments(outputs, labels, writer, step=i,
-                                            tag=f"Evaluation prototype assignments/batch {i}")
+            # visualize_prototype_assignments(outputs, labels, writer, step=i,
+            #                                 tag=f"Evaluation prototype assignments/batch {i}")
 
         mca_eval(outputs["class_logits"], labels)
 
