@@ -178,7 +178,8 @@ def main():
             net.backbone.set_requires_grad()
 
             param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}]
-            param_groups += [{'params': net.sa, 'lr': cfg.optim.fc_lr}] if cfg.model.cls_head == "sa" else []
+            param_groups += [{'params': net.cls_fc.parameters(), 'lr': cfg.optim.cls_fc_lr}] if cfg.model.cls_head == "sa" else []
+            param_groups += [{'params': net.sa, 'lr': cfg.optim.sa_lr}] if cfg.model.cls_head == "sa" else []
             optimizer = optim.SGD(param_groups, momentum=0.9)
             if cfg.model.get("always_optimize_prototypes", False):
                 net.optimizing_prototypes = True

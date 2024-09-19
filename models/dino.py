@@ -100,6 +100,8 @@ class ProtoDINO(nn.Module):
             self.fc = None
             self.sa = None
 
+        self.cls_fc = nn.Linear(self.dim, self.n_classes)
+
         self.optimizing_prototypes = True
         self.initializing = True
 
@@ -124,9 +126,6 @@ class ProtoDINO(nn.Module):
             labels: A tensor of shape [B,] of type torch.long representing the image-level class labels.
             gamma: A float indicating the coefficient for momentum update.
             use_gumbel: A boolean indicating whether to use gumbel softmax for patch assignments.
-
-        Returns:
-            None. This function updates the prototypes in-place.
         """
         B, H, W = patch_labels.shape
         C, K, dim = prototypes.shape
@@ -160,7 +159,7 @@ class ProtoDINO(nn.Module):
 
         part_assignment_maps = rearrange(part_assignment_maps, "(B H W) -> B (H W)", B=B, H=H, W=W)
 
-        return part_assignment_maps, P_new, L_c_dict
+        return part_assignment_maps, P_new
 
     def get_fg_by_similarity(self, patch_prototype_logits: torch.Tensor, labels: torch.Tensor):
         batch_size, n_pathes, C, K = patch_prototype_logits.shape
@@ -179,7 +178,7 @@ class ProtoDINO(nn.Module):
                 *, use_gumbel: bool = False):
         assert (not self.training) or (labels is not None)
 
-        patch_tokens = self.backbone(x)  # shape: [B, n_pathes, dim,]
+        patch_tokens, cls_token = self.backbone(x)  # shape: [B, n_pathes, dim,]
 
         patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
         prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
@@ -208,11 +207,13 @@ class ProtoDINO(nn.Module):
             class_logits = class_logits[:, :-1]
         
         class_logits /= self.temperature
+        aux_class_logits = self.cls_fc(cls_token)
 
         outputs = dict(
             patch_prototype_logits=patch_prototype_logits,  # shape: [B, n_patches, C, K,]
             image_prototype_logits=image_prototype_logits,  # shape: [B, C, K,]
             class_logits=class_logits,  # shape: [B, n_classes,]
+            aux_class_logits=aux_class_logits  # shape: B N_classes
         )
 
         if labels is not None:
@@ -224,7 +225,7 @@ class ProtoDINO(nn.Module):
                     labels=labels
                 )
 
-            part_assignment_maps, new_prototypes, L_c_dict = self.online_clustering(
+            part_assignment_maps, new_prototypes = self.online_clustering(
                 prototypes=self.prototypes,
                 patch_tokens=patch_tokens_norm.detach(),
                 patch_prototype_logits=patch_prototype_logits.detach(),
@@ -240,8 +241,7 @@ class ProtoDINO(nn.Module):
             outputs.update(dict(
                 patches=patch_tokens_norm,
                 part_assignment_maps=part_assignment_maps,
-                pseudo_patch_labels=pseudo_patch_labels,
-                L_c_dict=L_c_dict
+                pseudo_patch_labels=pseudo_patch_labels
             ))
 
         return outputs
@@ -265,6 +265,7 @@ class ProtoPNetLoss(nn.Module):
         self.l_patch_coef = l_patch_coef
         self.l_sep_coef = l_sep_coef
         self.xe = nn.CrossEntropyLoss()
+        self.xe_aux = nn.CrossEntropyLoss()
 
         self.C = num_classes
         self.K = n_prototypes
@@ -272,13 +273,14 @@ class ProtoPNetLoss(nn.Module):
         self.temperature = temperature
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: tuple[torch.Tensor, ...]):
-        logits, similarities = outputs["class_logits"], outputs["image_prototype_logits"]
+        logits, aux_logits, similarities = outputs["class_logits"], outputs["aux_class_logits"], outputs["image_prototype_logits"]
         patch_prototype_logits = outputs["patch_prototype_logits"]
         features, part_assignment_maps, fg_masks = outputs["patches"], outputs["part_assignment_maps"], outputs["pseudo_patch_labels"]
         _, labels, _ = batch
 
         loss_dict = dict()
         loss_dict["l_y"] = self.xe(logits, labels)
+        loss_dict["l_y_aux"] = self.xe_aux(aux_logits, labels)
 
         if self.l_patch_coef != 0:
             l_patch = self.compute_patch_contrastive_cost(
