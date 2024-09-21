@@ -200,7 +200,7 @@ def main():
             net.initializing = False
 
         print_parameters(net=net, logger=logger)
-        logger.log(f"net.initializing: {net.initializing}")
+        logger.info(f"net.initializing: {net.initializing}")
 
         train_epoch(
             model=net,
