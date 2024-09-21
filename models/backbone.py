@@ -58,9 +58,10 @@ class DINOv2Backbone(nn.Module):
         for param in self.parameters():
             param.requires_grad = True
 
-    def forward(self, x: torch.Tensor, key: str = "x_norm_patchtokens", reshape: bool = False) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, key: str = "x_norm_patchtokens", cls_key: str = "x_norm_clstoken", reshape: bool = False) -> torch.Tensor:
         feature_dict = self.dino.forward_features(x)  # type: dict[str, torch.Tensor]
         feature = feature_dict[key]
+        cls_token = feature_dict[cls_key]
         
         B, n_patches, dim = feature.shape
 
@@ -68,7 +69,7 @@ class DINOv2Backbone(nn.Module):
             H = W = int(sqrt(n_patches))
             feature = rearrange(feature, "B (H W) dim -> B dim H W", H=H, W=W)
         
-        return feature
+        return feature, cls_token
 
 
 class DINOv2BackboneExpanded(nn.Module):
