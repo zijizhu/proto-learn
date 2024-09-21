@@ -94,7 +94,7 @@ class ProtoDINO(nn.Module):
             )
         ))
         self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.feature_dim))
-        # self.learnable_prototypes = nn.Parameter(torch.randn(self.C, self.n_prototypes, self.feature_dim) * 0.01)
+        self.learnable_prototypes = nn.Parameter(torch.randn(self.C, self.n_prototypes, self.feature_dim) * 0.01)  # DEBUG
         self.temperature = temperature
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
@@ -207,12 +207,12 @@ class ProtoDINO(nn.Module):
             )
         else:
             patch_tokens_adpated_norm = F.normalize(self.adapters["feature"](patch_tokens), p=2, dim=-1)
-            prototype_adapted_norm = F.normalize(self.adapters["prototype"](self.prototypes), p=2, dim=-1)
+            # prototype_adapted_norm = F.normalize(self.adapters["prototype"](self.prototypes), p=2, dim=-1)
 
             patch_prototype_logits = einsum(
                 patch_tokens_adpated_norm,
-                prototype_adapted_norm,
-                # self.learnable_prototypes,
+                # prototype_adapted_norm,
+                F.normalize(self.learnable_prototypes, p=2, dim=-1),  # DEBUG
                 "B n_patches dim, C K dim -> B n_patches C K"
             )
 
