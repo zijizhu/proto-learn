@@ -1,6 +1,6 @@
 model:
   name: dinov2_vitb14_reg4
-  tuning: block_expansion
+  tuning: null
   adapter: true
   n_splits: 0
   gamma: 0.99
