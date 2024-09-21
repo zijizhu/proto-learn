@@ -13,7 +13,6 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
-from models.dino import ProtoDINO, ProtoPNetLoss, PaPr, PCA
 from models.backbone import DINOv2BackboneExpanded, MaskCLIP, DINOv2Backbone
 from cub_dataset import CUBDataset, CUBFewShotDataset
 from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
@@ -140,6 +139,11 @@ def main():
     else:
         raise NotImplementedError("Backbone must be one of dinov2 or clip.")
     
+    if cfg.model.adapter:
+        from models.dino_adapt import ProtoDINO, ProtoPNetLoss, PaPr, PCA
+    else:
+        from models.dino import ProtoDINO, ProtoPNetLoss, PaPr, PCA
+    
     assert cfg.model.fg_extractor in ["PCA", "PaPr"]
     if cfg.model.fg_extractor == "PaPr":
         fg_extractor = PaPr(bg_class=n_classes, **cfg.model.fg_extractor_args)
@@ -178,6 +182,7 @@ def main():
             net.backbone.set_requires_grad()
 
             param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}]
+            param_groups += [{'params': net.adapter.parameters(), 'lr': cfg.optim.adapter_lr}] if cfg.model.cls_head == "sa" else []
             param_groups += [{'params': net.cls_fc.parameters(), 'lr': cfg.optim.cls_fc_lr}] if cfg.model.cls_head == "sa" else []
             param_groups += [{'params': net.sa, 'lr': cfg.optim.sa_lr}] if cfg.model.cls_head == "sa" else []
             optimizer = optim.SGD(param_groups, momentum=0.9)

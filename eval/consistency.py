@@ -1,11 +1,15 @@
 """
 Migrated from https://github.com/hqhQAQ/EvalProtoPNet/tree/main
 """
+import argparse
+import pickle as pkl
+from pathlib import Path
 
 import cv2
 import numpy as np
 import torch
 import torchvision.transforms as transforms
+from torch import nn
 from tqdm import tqdm
 
 from .utils import Cub2011Eval, id_to_bbox, id_to_part_loc, in_bbox, mean, part_num, std
@@ -122,8 +126,10 @@ def get_corresponding_object_parts(ppnet, args, half_size, use_noise=False):
     return all_proto_to_part, all_proto_part_mask
 
 
-def evaluate_consistency(ppnet, args, half_size=36, part_thresh=0.8):
+def evaluate_consistency(ppnet: nn.Module, args: argparse.Namespace, save_dir: str | Path, half_size=36, part_thresh=0.8):
     all_proto_to_part, all_proto_part_mask = get_corresponding_object_parts(ppnet, args, half_size)
+    with open(Path(save_dir) / "part_prototype.pkl", "wb") as fp:
+        pkl.dump(dict(all_proto_to_part=all_proto_to_part, all_proto_part_mask=all_proto_part_mask), file=fp)
     
     all_proto_consis = []
     '''

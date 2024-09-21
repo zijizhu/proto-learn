@@ -173,7 +173,7 @@ def eval_consistency(net: nn.Module, dataloader: DataLoader, writer: SummaryWrit
 
 
 @torch.inference_mode()
-def eval_accuracy(model: nn.Module, dataloader: DataLoader, writer: SummaryWriter,
+def eval_accuracy(model: nn.Module, dataloader: DataLoader, writer: SummaryWriter | None,
                   logger: Logger, device: torch.device, vis_every_n_batch: int = 5):
     model.eval()
     mca_eval = MulticlassAccuracy(num_classes=len(dataloader.dataset.classes), average="micro").to(device)
@@ -183,7 +183,7 @@ def eval_accuracy(model: nn.Module, dataloader: DataLoader, writer: SummaryWrite
         images, transformed_keypoints, labels, attributes, sample_indices = batch
         outputs = model(images, labels=labels)
 
-        if i % vis_every_n_batch == 0:
+        if i % vis_every_n_batch == 0 and writer is not None:
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
             visualize_topk_prototypes(outputs, batch_im_paths, writer,
                                       tag_fmt_str="Top{topk} prototype/eval/batch {step}/{idx}", step=i)
@@ -257,13 +257,13 @@ def main():
     
     writer = SummaryWriter(log_dir=log_dir)
 
-    logger.info("Evaluating accuracy...")
-    eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
+    # logger.info("Evaluating accuracy...")
+    # eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
     
-    logger.info("Evaluating class-wise NMI and ARI...")
-    mean_nmi, mean_ari = eval_nmi_ari(net=net, dataloader=dataloader_eval, device=device)
-    logger.info(f"Mean class-wise NMI: {float(mean_nmi)}")
-    logger.info(f"Mean class-wise ARI: {float(mean_ari)}")
+    # logger.info("Evaluating class-wise NMI and ARI...")
+    # mean_nmi, mean_ari = eval_nmi_ari(net=net, dataloader=dataloader_eval, device=device)
+    # logger.info(f"Mean class-wise NMI: {float(mean_nmi)}")
+    # logger.info(f"Mean class-wise ARI: {float(mean_ari)}")
 
     # Monkey-patch the model class to make it compatible with eval script
     ProtoDINO.push_forward = push_forward
@@ -275,7 +275,7 @@ def main():
     args.nb_classes = 200
 
     logger.info("Evaluating consistency...")
-    consistency_score = evaluate_consistency(net, args)
+    consistency_score = evaluate_consistency(net, args, save_dir=log_dir)
     logger.info(f"Network consistency score: {consistency_score.item()}")
 
 
