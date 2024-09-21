@@ -206,7 +206,7 @@ class ProtoDINO(nn.Module):
                 "B n_patches dim, C K dim -> B n_patches C K"
             )
         else:
-            patch_tokens_adpated_norm = F.normalize(self.adapters["feature"](patch_tokens), p=2, dim=-1)
+            patch_tokens_adpated_norm = self.adapters["feature"](patch_tokens)
             # prototype_adapted_norm = F.normalize(self.adapters["prototype"](self.prototypes), p=2, dim=-1)
 
             patch_prototype_logits = einsum(
