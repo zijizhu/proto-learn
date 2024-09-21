@@ -237,7 +237,7 @@ class ProtoDINO(nn.Module):
             class_logits = image_prototype_logits.sum(-1)  # shape: [B, C,]
             class_logits = class_logits[:, :-1]
         
-        class_logits /= self.temperature
+        class_logits *= 10
         aux_class_logits = self.cls_fc(cls_token)
 
         outputs = dict(

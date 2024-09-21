@@ -4,7 +4,7 @@ model:
   adapter: true
   n_splits: 0
   gamma: 0.99
-  n_prototypes: 5
+  n_prototypes: 10
   pooling_method: max
   temperature: 1.0
   cls_head: sa
