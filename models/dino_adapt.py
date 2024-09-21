@@ -82,10 +82,14 @@ class ProtoDINO(nn.Module):
         self.adapters = nn.ModuleDict(dict(
             feature=nn.Sequential(
                 nn.Linear(self.feature_dim, self.dim),
+                nn.ReLU(),
+                nn.Linear(self.dim, self.dim),
                 nn.Sigmoid()
             ),
             prototype=nn.Sequential(
                 nn.Linear(self.feature_dim, self.dim),
+                nn.ReLU(),
+                nn.Linear(self.dim, self.dim),
                 nn.Sigmoid()
             )
         ))
