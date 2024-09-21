@@ -86,12 +86,12 @@ class ProtoDINO(nn.Module):
                 nn.Linear(self.dim, self.dim),
                 nn.Sigmoid()
             ),
-            prototype=nn.Sequential(
-                nn.Linear(self.feature_dim, self.dim),
-                nn.ReLU(),
-                nn.Linear(self.dim, self.dim),
-                nn.Sigmoid()
-            )
+            # prototype=nn.Sequential(
+            #     nn.Linear(self.feature_dim, self.dim),
+            #     nn.ReLU(),
+            #     nn.Linear(self.dim, self.dim),
+            #     nn.Sigmoid()
+            # )
         ))
         self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.feature_dim))
         self.learnable_prototypes = nn.Parameter(torch.randn(self.C, self.n_prototypes, self.dim) * 0.01)  # DEBUG
