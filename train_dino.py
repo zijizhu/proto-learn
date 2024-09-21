@@ -203,6 +203,7 @@ def main():
 
         print_parameters(net=net, logger=logger)
         logger.info(f"net.initializing: {net.initializing}")
+        logger.info(f"net.optimizing_prototypes: {net.optimizing_prototypes}")
 
         train_epoch(
             model=net,
