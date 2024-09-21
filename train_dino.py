@@ -184,6 +184,7 @@ def main():
                 net.backbone.set_requires_grad()
 
             param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}] if (cfg.model.n_splits != 0 and cfg.model.tuning is not None) else []
+            # param_groups += [{'params': net.learnable_prototypes, 'lr': cfg.optim.adapter_lr}] if cfg.model.adapter else []
             param_groups += [{'params': net.adapters.parameters(), 'lr': cfg.optim.adapter_lr}] if cfg.model.adapter else []
             param_groups += [{'params': net.cls_fc.parameters(), 'lr': cfg.optim.cls_fc_lr}] if cfg.model.losses.l_aux_coef != 0 else []
             param_groups += [{'params': net.sa, 'lr': cfg.optim.sa_lr}] if cfg.model.cls_head == "sa" else []

@@ -29,7 +29,6 @@ optim:
   sa_lr: 1.0e-06
   scheduler: null
   fine_tuning_epochs:
-    - 0
     - 1
     - 2
     - 3
