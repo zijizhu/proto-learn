@@ -94,7 +94,7 @@ class ProtoDINO(nn.Module):
             # )
         ))
         self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.feature_dim))
-        self.learnable_prototypes = nn.Parameter(torch.randn(self.C, self.n_prototypes, self.dim) * 0.01)  # DEBUG
+        self.learnable_prototypes = nn.Parameter(torch.randn(self.C, self.n_prototypes, self.dim))  # DEBUG
         self.temperature = temperature
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
