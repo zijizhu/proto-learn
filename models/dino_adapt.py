@@ -80,7 +80,7 @@ class ProtoDINO(nn.Module):
         self.feature_dim = dim
         self.dim = 128
         self.adapter = nn.Sequential(
-            nn.Linear(self.feature_dim, 128),
+            nn.Linear(self.feature_dim, self.dim),
             nn.ReLU(),
             nn.Linear(self.dim, self.dim),
             nn.Sigmoid()
@@ -197,12 +197,12 @@ class ProtoDINO(nn.Module):
                 "B n_patches dim, C K dim -> B n_patches C K"
             )
         else:
-            patch_tokens_norm_adpated = F.normalize(self.adapter(patch_tokens_norm), p=2, dim=-1)
-            prototype_norm_adapted = F.normalize(self.adapter(prototype_norm), p=2, dim=-1)
+            patch_tokens_adpated_norm = F.normalize(self.adapter(patch_tokens), p=2, dim=-1)
+            prototype_adapted_norm = F.normalize(self.adapter(self.prototypes), p=2, dim=-1)
 
             patch_prototype_logits = einsum(
-                patch_tokens_norm_adpated,
-                prototype_norm_adapted,
+                patch_tokens_adpated_norm,
+                prototype_adapted_norm,
                 "B n_patches dim, C K dim -> B n_patches C K"
             )
 
