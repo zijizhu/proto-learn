@@ -79,14 +79,16 @@ class ProtoDINO(nn.Module):
 
         self.feature_dim = dim
         self.dim = 128
-        self.feature_adapter = nn.Sequential(
-            nn.Linear(self.feature_dim, self.dim),
-            nn.Sigmoid()
-        )
-        self.prototype_adapter = nn.Sequential(
-            nn.Linear(self.feature_dim, self.dim),
-            nn.Sigmoid()
-        )
+        self.adapters = nn.ModuleDict(dict(
+            feature=nn.Sequential(
+                nn.Linear(self.feature_dim, self.dim),
+                nn.Sigmoid()
+            ),
+            prototype=nn.Sequential(
+                nn.Linear(self.feature_dim, self.dim),
+                nn.Sigmoid()
+            )
+        ))
         self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.feature_dim))
         self.temperature = temperature
 
@@ -199,8 +201,8 @@ class ProtoDINO(nn.Module):
                 "B n_patches dim, C K dim -> B n_patches C K"
             )
         else:
-            patch_tokens_adpated_norm = F.normalize(self.feature_adapter(patch_tokens), p=2, dim=-1)
-            prototype_adapted_norm = F.normalize(self.prototype_adapter(self.prototypes), p=2, dim=-1)
+            patch_tokens_adpated_norm = F.normalize(self.adapters["feature"](patch_tokens), p=2, dim=-1)
+            prototype_adapted_norm = F.normalize(self.adapters["prototype"](self.prototypes), p=2, dim=-1)
 
             patch_prototype_logits = einsum(
                 patch_tokens_adpated_norm,
