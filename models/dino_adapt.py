@@ -190,14 +190,21 @@ class ProtoDINO(nn.Module):
         patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
         prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
 
-        patch_tokens_norm_adpated = F.normalize(self.adapter(patch_tokens_norm), p=2, dim=-1)
-        prototype_norm_adapted = F.normalize(self.adapter(prototype_norm), p=2, dim=-1)
+        if self.initializing:
+            patch_prototype_logits = einsum(
+                patch_tokens_norm,
+                prototype_norm,
+                "B n_patches dim, C K dim -> B n_patches C K"
+            )
+        else:
+            patch_tokens_norm_adpated = F.normalize(self.adapter(patch_tokens_norm), p=2, dim=-1)
+            prototype_norm_adapted = F.normalize(self.adapter(prototype_norm), p=2, dim=-1)
 
-        patch_prototype_logits = einsum(
-            patch_tokens_norm_adpated,
-            prototype_norm_adapted,
-            "B n_patches dim, C K dim -> B n_patches C K"
-        )
+            patch_prototype_logits = einsum(
+                patch_tokens_norm_adpated,
+                prototype_norm_adapted,
+                "B n_patches dim, C K dim -> B n_patches C K"
+            )
 
         if self.pooling_method == "max":
             image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,], C=n_classes+1
