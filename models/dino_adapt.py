@@ -166,7 +166,7 @@ class ProtoDINO(nn.Module):
 
         part_assignment_maps = rearrange(part_assignment_maps, "(B H W) -> B (H W)", B=B, H=H, W=W)
 
-        P_new = F.normalize(P_new, p=2, dim=-1)
+        # P_new = F.normalize(P_new, p=2, dim=-1)
 
         return part_assignment_maps, P_new
 
@@ -227,33 +227,33 @@ class ProtoDINO(nn.Module):
             # aux_class_logits=aux_class_logits  # shape: B N_classes
         )
 
-        # if labels is not None:
-        #     if self.initializing:
-        #         pseudo_patch_labels = self.fg_extractor(patch_tokens_norm.detach(), labels)
-        #     else:
-        #         pseudo_patch_labels = self.get_fg_by_similarity(
-        #             patch_prototype_logits=patch_prototype_logits.detach(),
-        #             labels=labels
-        #         )
+        if labels is not None:
+            if self.initializing:
+                pseudo_patch_labels = self.fg_extractor(patch_tokens_norm.detach(), labels)
+            else:
+                pseudo_patch_labels = self.get_fg_by_similarity(
+                    patch_prototype_logits=patch_prototype_logits.detach(),
+                    labels=labels
+                )
 
-        #     part_assignment_maps, new_prototypes = self.online_clustering(
-        #         prototypes=self.prototypes,
-        #         patch_tokens=patch_tokens_norm.detach(),
-        #         patch_prototype_logits=patch_prototype_logits.detach(),
-        #         patch_labels=pseudo_patch_labels,
-        #         bg_class=self.C - 1,
-        #         gamma=self.gamma,
-        #         use_gumbel=use_gumbel
-        #     )
+            part_assignment_maps, new_prototypes = self.online_clustering(
+                prototypes=self.prototypes,
+                patch_tokens=patch_tokens_norm.detach(),
+                patch_prototype_logits=patch_prototype_logits.detach(),
+                patch_labels=pseudo_patch_labels,
+                bg_class=self.C - 1,
+                gamma=self.gamma,
+                use_gumbel=use_gumbel
+            )
 
-        #     if self.training and self.optimizing_prototypes:
-        #         self.prototypes = new_prototypes
+            if self.training and self.optimizing_prototypes:
+                self.prototypes = new_prototypes
 
-        #     outputs.update(dict(
-        #         patches=patch_tokens_norm,
-        #         part_assignment_maps=part_assignment_maps,
-        #         pseudo_patch_labels=pseudo_patch_labels
-        #     ))
+            outputs.update(dict(
+                patches=patch_tokens_norm,
+                part_assignment_maps=part_assignment_maps,
+                pseudo_patch_labels=pseudo_patch_labels
+            ))
 
         return outputs
 
