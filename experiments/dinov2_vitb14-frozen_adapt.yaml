@@ -16,8 +16,8 @@ model:
   losses:
     l_patch_coef: 0
     l_orth_coef: 0
-    l_clst_coef: 0
-    l_sep_coef: 0
+    l_clst_coef: 0.8
+    l_sep_coef: 0.08
     l_aux_coef: 0
   always_optimize_prototypes: false
 dataset:

@@ -290,7 +290,7 @@ class ProtoPNetLoss(nn.Module):
         # logits, aux_logits, similarities = outputs["class_logits"], outputs["aux_class_logits"], outputs["image_prototype_logits"]
         # patch_prototype_logits = outputs["patch_prototype_logits"]
         # features, part_assignment_maps, fg_masks = outputs["patches"], outputs["part_assignment_maps"], outputs["pseudo_patch_labels"]
-        logits = outputs["class_logits"]
+        logits, similarities = outputs["class_logits"], outputs["image_prototype_logits"]
         _, labels, _ = batch
 
         loss_dict = dict()
@@ -320,12 +320,12 @@ class ProtoPNetLoss(nn.Module):
         #     loss_dict["l_orth"] = self.l_orth_coef * l_orth
         #     loss_dict["_l_orth_raw"] = l_orth
 
-        # if self.l_clst_coef != 0 and self.l_sep_coef != 0:
-        #     l_clst, l_sep = self.compute_prototype_costs(similarities, labels, num_classes=self.C + 1)
-        #     loss_dict["l_clst"] = -(self.l_clst_coef * l_clst)
-        #     loss_dict["l_sep"] = self.l_sep_coef * l_sep
-        #     loss_dict["_l_clst_raw"] = l_clst
-        #     loss_dict["_l_sep_raw"] = l_sep
+        if self.l_clst_coef != 0 and self.l_sep_coef != 0:
+            l_clst, l_sep = self.compute_prototype_costs(similarities, labels, num_classes=self.C + 1)
+            loss_dict["l_clst"] = -(self.l_clst_coef * l_clst)
+            loss_dict["l_sep"] = self.l_sep_coef * l_sep
+            loss_dict["_l_clst_raw"] = l_clst
+            loss_dict["_l_sep_raw"] = l_sep
 
         return loss_dict
 
