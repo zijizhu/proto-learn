@@ -41,9 +41,6 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
             optimizer.step()
             optimizer.zero_grad()
 
-            if hasattr(model, "normalize_prototypes"):
-                model.normalize_prototypes()
-
             for k, v in loss_dict.items():
                 running_losses[k] += v.item() * dataloader.batch_size
 

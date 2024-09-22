@@ -87,15 +87,15 @@ class ProtoDINO(nn.Module):
                 # nn.Linear(self.dim, self.dim),
                 nn.Sigmoid()
             ),
-            # prototype=nn.Sequential(
-            #     nn.Linear(self.feature_dim, self.dim),
-            #     nn.ReLU(),
-            #     nn.Linear(self.dim, self.dim),
-            #     nn.Sigmoid()
-            # )
+            prototype=nn.Sequential(
+                nn.Linear(self.feature_dim, self.dim),
+                # nn.ReLU(),
+                # nn.Linear(self.dim, self.dim),
+                nn.Sigmoid()
+            )
         ))
-        # self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.feature_dim))
-        self.learnable_prototypes = nn.Parameter(torch.randn(self.C, self.n_prototypes, self.dim))  # DEBUG
+        self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.feature_dim))
+        # self.learnable_prototypes = nn.Parameter(torch.randn(self.C, self.n_prototypes, self.dim))  # DEBUG
         self.temperature = temperature
 
         # nn.init.trunc_normal_(self.prototypes, std=0.02)
@@ -166,6 +166,8 @@ class ProtoDINO(nn.Module):
 
         part_assignment_maps = rearrange(part_assignment_maps, "(B H W) -> B (H W)", B=B, H=H, W=W)
 
+        P_new = F.normalize(P_new, p=2, dim=-1)
+
         return part_assignment_maps, P_new
 
     def get_fg_by_similarity(self, patch_prototype_logits: torch.Tensor, labels: torch.Tensor):
@@ -190,33 +192,24 @@ class ProtoDINO(nn.Module):
 
         patch_tokens, cls_token = self.backbone(x)  # shape: [B, n_pathes, dim,]
 
-        # patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
-        # prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
+        if self.initializing:
+            patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
+            prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
+            patch_prototype_logits = einsum(
+                patch_tokens_norm,
+                prototype_norm,
+                "B n_patches dim, C K dim -> B n_patches C K"
+            )
+        else:
+            patch_tokens_adpated_norm = self.adapters["feature"](patch_tokens)
+            prototype_adapted_norm = self.adapters["prototype"](self.prototypes)
 
-        # if self.initializing:
-        #     patch_prototype_logits = einsum(
-        #         patch_tokens_norm,
-        #         prototype_norm,
-        #         "B n_patches dim, C K dim -> B n_patches C K"
-        #     )
-        # else:
-        #     patch_tokens_adpated_norm = self.adapters["feature"](patch_tokens)
-        #     # prototype_adapted_norm = F.normalize(self.adapters["prototype"](self.prototypes), p=2, dim=-1)
-
-        #     patch_prototype_logits = einsum(
-        #         patch_tokens_adpated_norm,
-        #         # prototype_adapted_norm,
-        #         F.normalize(self.learnable_prototypes, p=2, dim=-1),  # DEBUG
-        #         "B n_patches dim, C K dim -> B n_patches C K"
-        #     )
-
-        patch_tokens_adpated_norm = self.adapters["feature"](patch_tokens)
-        patch_prototype_logits = einsum(
-            patch_tokens_adpated_norm,
-            # prototype_adapted_norm,
-            F.normalize(self.learnable_prototypes, p=2, dim=-1),  # DEBUG
-            "B n_patches dim, C K dim -> B n_patches C K"
-        )
+            patch_prototype_logits = einsum(
+                patch_tokens_adpated_norm,
+                F.normalize(prototype_adapted_norm, p=2, dim=-1),
+                # F.normalize(self.learnable_prototypes, p=2, dim=-1),  # DEBUG
+                "B n_patches dim, C K dim -> B n_patches C K"
+            )
 
         image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,], C=n_classes+1
 

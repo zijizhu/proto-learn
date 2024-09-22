@@ -186,7 +186,7 @@ def main():
             param_groups = []
             # param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}] if (cfg.model.n_splits != 0 and cfg.model.tuning is not None) else []
             param_groups += [
-                {'params': net.learnable_prototypes, 'lr': cfg.optim.adapter_lr},
+                # {'params': net.learnable_prototypes, 'lr': cfg.optim.adapter_lr},
                 {'params': net.adapters.parameters(), 'lr': cfg.optim.adapter_lr, 'weight_decay': 1e-3}
             ] if cfg.model.adapter else []  # DEBUG
             param_groups += [{'params': net.sa, 'lr': cfg.optim.sa_lr}] if cfg.model.cls_head == "sa" else []
