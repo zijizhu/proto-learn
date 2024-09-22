@@ -307,9 +307,10 @@ class ProtoPNetLoss(nn.Module):
         self.temperature = temperature
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: tuple[torch.Tensor, ...]):
-        logits, aux_logits, similarities = outputs["class_logits"], outputs["aux_class_logits"], outputs["image_prototype_logits"]
-        patch_prototype_logits = outputs["patch_prototype_logits"]
-        features, part_assignment_maps, fg_masks = outputs["patches"], outputs["part_assignment_maps"], outputs["pseudo_patch_labels"]
+        # logits, aux_logits, similarities = outputs["class_logits"], outputs["aux_class_logits"], outputs["image_prototype_logits"]
+        # patch_prototype_logits = outputs["patch_prototype_logits"]
+        # features, part_assignment_maps, fg_masks = outputs["patches"], outputs["part_assignment_maps"], outputs["pseudo_patch_labels"]
+        logits, aux_logits, similarities = outputs["class_logits"]
         _, labels, _ = batch
 
         loss_dict = dict()
