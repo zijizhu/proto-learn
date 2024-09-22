@@ -310,42 +310,42 @@ class ProtoPNetLoss(nn.Module):
         # logits, aux_logits, similarities = outputs["class_logits"], outputs["aux_class_logits"], outputs["image_prototype_logits"]
         # patch_prototype_logits = outputs["patch_prototype_logits"]
         # features, part_assignment_maps, fg_masks = outputs["patches"], outputs["part_assignment_maps"], outputs["pseudo_patch_labels"]
-        logits, aux_logits, similarities = outputs["class_logits"]
+        logits = outputs["class_logits"]
         _, labels, _ = batch
 
         loss_dict = dict()
         loss_dict["l_y"] = self.xe(logits, labels)
 
-        if self.l_aux_coef != 0:
-            loss_dict["l_y_aux"] = self.xe_aux(aux_logits, labels)
+        # if self.l_aux_coef != 0:
+        #     loss_dict["l_y_aux"] = self.xe_aux(aux_logits, labels)
 
-        if self.l_patch_coef != 0:
-            l_patch = self.compute_patch_contrastive_cost(
-                patch_prototype_logits,
-                part_assignment_maps,
-                class_weight=self.class_weights.to(dtype=torch.float32, device=logits.device),
-                temperature=self.temperature
-            )
-            loss_dict["l_patch"] = self.l_patch_coef * l_patch
-            loss_dict["_l_patch_raw"] = l_patch
+        # if self.l_patch_coef != 0:
+        #     l_patch = self.compute_patch_contrastive_cost(
+        #         patch_prototype_logits,
+        #         part_assignment_maps,
+        #         class_weight=self.class_weights.to(dtype=torch.float32, device=logits.device),
+        #         temperature=self.temperature
+        #     )
+        #     loss_dict["l_patch"] = self.l_patch_coef * l_patch
+        #     loss_dict["_l_patch_raw"] = l_patch
 
-        if self.l_orth_coef != 0:
-            l_orth = self.compute_orthogonality_costs(
-                features=features,
-                part_assignment_maps=part_assignment_maps,
-                fg_masks=fg_masks,
-                n_prototypes=self.K,
-                bg_class_index=self.C
-            )
-            loss_dict["l_orth"] = self.l_orth_coef * l_orth
-            loss_dict["_l_orth_raw"] = l_orth
+        # if self.l_orth_coef != 0:
+        #     l_orth = self.compute_orthogonality_costs(
+        #         features=features,
+        #         part_assignment_maps=part_assignment_maps,
+        #         fg_masks=fg_masks,
+        #         n_prototypes=self.K,
+        #         bg_class_index=self.C
+        #     )
+        #     loss_dict["l_orth"] = self.l_orth_coef * l_orth
+        #     loss_dict["_l_orth_raw"] = l_orth
 
-        if self.l_clst_coef != 0 and self.l_sep_coef != 0:
-            l_clst, l_sep = self.compute_prototype_costs(similarities, labels, num_classes=self.C + 1)
-            loss_dict["l_clst"] = -(self.l_clst_coef * l_clst)
-            loss_dict["l_sep"] = self.l_sep_coef * l_sep
-            loss_dict["_l_clst_raw"] = l_clst
-            loss_dict["_l_sep_raw"] = l_sep
+        # if self.l_clst_coef != 0 and self.l_sep_coef != 0:
+        #     l_clst, l_sep = self.compute_prototype_costs(similarities, labels, num_classes=self.C + 1)
+        #     loss_dict["l_clst"] = -(self.l_clst_coef * l_clst)
+        #     loss_dict["l_sep"] = self.l_sep_coef * l_sep
+        #     loss_dict["_l_clst_raw"] = l_clst
+        #     loss_dict["_l_sep_raw"] = l_sep
 
         return loss_dict
 
