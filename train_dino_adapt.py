@@ -155,6 +155,7 @@ def main():
         dim=dim,
         fg_extractor=fg_extractor,
         # fg_extractor=None,
+        adapter_type=cfg.model.get("adapter_type", "regular"),
         n_prototypes=cfg.model.n_prototypes,
         gamma=cfg.model.get("gamma", 0.99),
         temperature=cfg.model.temperature,
@@ -191,8 +192,10 @@ def main():
             
             param_groups += [{'params': net.adapters.parameters(), 'lr': cfg.optim.adapter_lr, 'weight_decay': 1e-3}] if cfg.model.adapter else []  # DEBUG
             param_groups += [{'params': net.sa, 'lr': cfg.optim.sa_lr}] if cfg.model.cls_head == "sa" else []
-            # optimizer = optim.SGD(param_groups, momentum=0.9)
-            optimizer = optim.Adam(param_groups)
+            if cfg.optim.get("optimizer", "sgd") == "adam":
+                optimizer = optim.Adam(param_groups)
+            else:
+                optimizer = optim.SGD(param_groups, momentum=0.9)
             if cfg.model.get("always_optimize_prototypes", False):
                 net.optimizing_prototypes = True
             else:

@@ -66,7 +66,7 @@ class PCA(nn.Module):
 
 class ProtoDINO(nn.Module):
     def __init__(self, backbone: nn.Module, pooling_method: str, cls_head: str, fg_extractor: nn.Module,
-                 *, gamma: float = 0.999, n_prototypes: int = 5, n_classes: int = 200,
+                 *, adapter_type: str = "regular", gamma: float = 0.999, n_prototypes: int = 5, n_classes: int = 200,
                  temperature: float = 0.2, sa_init: float = 0.5, dim: int = 768):
         super().__init__()
         self.gamma = gamma
@@ -80,25 +80,34 @@ class ProtoDINO(nn.Module):
 
         self.feature_dim = dim
         self.dim = 64
-        self.adapters = nn.ModuleDict(dict(
-            feature=nn.Sequential(
-                nn.Linear(self.feature_dim, self.dim),
-                # nn.ReLU(),
-                # nn.Linear(self.dim, self.dim),
-                nn.Sigmoid()
-            ),
-            prototype=nn.Sequential(
-                nn.Linear(self.feature_dim, self.dim),
-                # nn.ReLU(),
-                # nn.Linear(self.dim, self.dim),
-                nn.Sigmoid()
-            )
-        ))
+        if adapter_type == "bottleneck":
+            self.adapters = nn.ModuleDict(dict(
+                feature=nn.Sequential(
+                    nn.Linear(self.feature_dim, self.dim),
+                    nn.ReLU(),
+                    nn.Linear(self.dim, self.dim),
+                    nn.Sigmoid()
+                ),
+                prototype=nn.Sequential(
+                    nn.Linear(self.feature_dim, self.dim),
+                    nn.ReLU(),
+                    nn.Linear(self.dim, self.dim),
+                    nn.Sigmoid()
+                )
+            ))
+        else:
+            self.adapters = nn.ModuleDict(dict(
+                feature=nn.Sequential(
+                    nn.Linear(self.feature_dim, self.dim),
+                    nn.Sigmoid()
+                ),
+                prototype=nn.Sequential(
+                    nn.Linear(self.feature_dim, self.dim),
+                    nn.Sigmoid()
+                )
+            ))
         self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.feature_dim))
-        # self.learnable_prototypes = nn.Parameter(torch.randn(self.C, self.n_prototypes, self.dim))  # DEBUG
         self.temperature = temperature
-
-        # nn.init.trunc_normal_(self.prototypes, std=0.02)
 
         assert pooling_method in ["sum", "avg", "max"]
         assert cls_head in ["fc", "sum", "avg", 'sa']
