@@ -191,8 +191,8 @@ def main():
             
             param_groups += [{'params': net.adapters.parameters(), 'lr': cfg.optim.adapter_lr, 'weight_decay': 1e-3}] if cfg.model.adapter else []  # DEBUG
             param_groups += [{'params': net.sa, 'lr': cfg.optim.sa_lr}] if cfg.model.cls_head == "sa" else []
-            optimizer = optim.SGD(param_groups, momentum=0.9)
-            # optimizer = optim.Adam(param_groups)
+            # optimizer = optim.SGD(param_groups, momentum=0.9)
+            optimizer = optim.Adam(param_groups)
             if cfg.model.get("always_optimize_prototypes", False):
                 net.optimizing_prototypes = True
             else:
