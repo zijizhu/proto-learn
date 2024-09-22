@@ -24,7 +24,7 @@ dataset:
   augmentation: true
 optim:
   epochs: 4
-  adapter_lr: 3.0e-3
+  adapter_lr: 5.0e-3
   cls_fc_lr: null
   sa_lr: 1.0e-06
   scheduler: null

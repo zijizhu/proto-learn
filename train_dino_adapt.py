@@ -185,10 +185,13 @@ def main():
                 net.backbone.set_requires_grad()
             param_groups = []
             # param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}] if (cfg.model.n_splits != 0 and cfg.model.tuning is not None) else []
-            param_groups += [{'params': net.learnable_prototypes, 'lr': cfg.optim.adapter_lr}] if cfg.model.adapter else []  # DEBUG
-            param_groups += [{'params': net.adapters.parameters(), 'lr': cfg.optim.adapter_lr}] if cfg.model.adapter else []
+            param_groups += [
+                {'params': net.learnable_prototypes, 'lr': cfg.optim.adapter_lr},
+                {'params': net.adapters.parameters(), 'lr': cfg.optim.adapter_lr, 'weight_decay': 1e-3}
+            ] if cfg.model.adapter else []  # DEBUG
             param_groups += [{'params': net.sa, 'lr': cfg.optim.sa_lr}] if cfg.model.cls_head == "sa" else []
-            optimizer = optim.SGD(param_groups, momentum=0.9)
+            # optimizer = optim.SGD(param_groups, momentum=0.9)
+            optimizer = optim.Adam(param_groups)
             if cfg.model.get("always_optimize_prototypes", False):
                 net.optimizing_prototypes = True
             else:

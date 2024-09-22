@@ -94,11 +94,11 @@ class ProtoDINO(nn.Module):
             #     nn.Sigmoid()
             # )
         ))
-        self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.feature_dim))
+        # self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.feature_dim))
         self.learnable_prototypes = nn.Parameter(torch.randn(self.C, self.n_prototypes, self.dim))  # DEBUG
         self.temperature = temperature
 
-        nn.init.trunc_normal_(self.prototypes, std=0.02)
+        # nn.init.trunc_normal_(self.prototypes, std=0.02)
 
         assert pooling_method in ["sum", "avg", "max"]
         assert cls_head in ["fc", "sum", "avg", 'sa']
@@ -181,14 +181,17 @@ class ProtoDINO(nn.Module):
 
         return torch.where(fg_mask, repeat(labels, "B -> B H W", H=H, W=W), C-1)
 
+    def normalize_prototypes(self):
+        self.learnable_prototypes.data = F.normalize(self.learnable_prototypes.data, p=2, dim=-1)
+
     def forward(self, x: torch.Tensor, labels: torch.Tensor | None = None,
                 *, use_gumbel: bool = False):
         assert (not self.training) or (labels is not None)
 
         patch_tokens, cls_token = self.backbone(x)  # shape: [B, n_pathes, dim,]
 
-        patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
-        prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
+        # patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
+        # prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
 
         # if self.initializing:
         #     patch_prototype_logits = einsum(
