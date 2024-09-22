@@ -72,7 +72,8 @@ class ProtoDINO(nn.Module):
         self.gamma = gamma
         self.n_prototypes = n_prototypes
         self.n_classes = n_classes
-        self.C = n_classes + 1
+        # self.C = n_classes + 1
+        self.C = n_classes
         self.backbone = backbone
 
         self.fg_extractor = fg_extractor
@@ -226,7 +227,7 @@ class ProtoDINO(nn.Module):
         if self.cls_head == "sa" and self.sa is not None:
             sa_weights = F.softmax(self.sa, dim=-1) * self.n_prototypes
             image_prototype_logits_weighted = image_prototype_logits[:, :-1, :] * sa_weights
-            class_logits = image_prototype_logits_weighted.sum(-1)
+            class_logits = image_prototype_logits_weighted.sum(-1) * 10
         elif self.cls_head == "fc" and self.fc is not None:
             image_prototype_logits_flat = rearrange(image_prototype_logits[:, :-1, :], "B n_classes K -> B (n_classes K)")
             class_logits = self.fc(image_prototype_logits_flat.detach())  # shape: [B, n_classes,]
@@ -237,7 +238,6 @@ class ProtoDINO(nn.Module):
             class_logits = image_prototype_logits.sum(-1)  # shape: [B, C,]
             class_logits = class_logits[:, :-1]
         
-        class_logits *= 10
         aux_class_logits = self.cls_fc(cls_token)
 
         outputs = dict(
@@ -247,33 +247,33 @@ class ProtoDINO(nn.Module):
             aux_class_logits=aux_class_logits  # shape: B N_classes
         )
 
-        if labels is not None:
-            if self.initializing:
-                pseudo_patch_labels = self.fg_extractor(patch_tokens_norm.detach(), labels)
-            else:
-                pseudo_patch_labels = self.get_fg_by_similarity(
-                    patch_prototype_logits=patch_prototype_logits.detach(),
-                    labels=labels
-                )
+        # if labels is not None:
+        #     if self.initializing:
+        #         pseudo_patch_labels = self.fg_extractor(patch_tokens_norm.detach(), labels)
+        #     else:
+        #         pseudo_patch_labels = self.get_fg_by_similarity(
+        #             patch_prototype_logits=patch_prototype_logits.detach(),
+        #             labels=labels
+        #         )
 
-            part_assignment_maps, new_prototypes = self.online_clustering(
-                prototypes=self.prototypes,
-                patch_tokens=patch_tokens_norm.detach(),
-                patch_prototype_logits=patch_prototype_logits.detach(),
-                patch_labels=pseudo_patch_labels,
-                bg_class=self.C - 1,
-                gamma=self.gamma,
-                use_gumbel=use_gumbel
-            )
+        #     part_assignment_maps, new_prototypes = self.online_clustering(
+        #         prototypes=self.prototypes,
+        #         patch_tokens=patch_tokens_norm.detach(),
+        #         patch_prototype_logits=patch_prototype_logits.detach(),
+        #         patch_labels=pseudo_patch_labels,
+        #         bg_class=self.C - 1,
+        #         gamma=self.gamma,
+        #         use_gumbel=use_gumbel
+        #     )
 
-            if self.training and self.optimizing_prototypes:
-                self.prototypes = new_prototypes
+        #     if self.training and self.optimizing_prototypes:
+        #         self.prototypes = new_prototypes
 
-            outputs.update(dict(
-                patches=patch_tokens_norm,
-                part_assignment_maps=part_assignment_maps,
-                pseudo_patch_labels=pseudo_patch_labels
-            ))
+        #     outputs.update(dict(
+        #         patches=patch_tokens_norm,
+        #         part_assignment_maps=part_assignment_maps,
+        #         pseudo_patch_labels=pseudo_patch_labels
+        #     ))
 
         return outputs
 
