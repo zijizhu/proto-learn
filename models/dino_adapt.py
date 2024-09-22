@@ -79,12 +79,12 @@ class ProtoDINO(nn.Module):
         self.fg_extractor = fg_extractor
 
         self.feature_dim = dim
-        self.dim = 128
+        self.dim = 64
         self.adapters = nn.ModuleDict(dict(
             feature=nn.Sequential(
                 nn.Linear(self.feature_dim, self.dim),
-                nn.ReLU(),
-                nn.Linear(self.dim, self.dim),
+                # nn.ReLU(),
+                # nn.Linear(self.dim, self.dim),
                 nn.Sigmoid()
             ),
             # prototype=nn.Sequential(
@@ -200,22 +200,30 @@ class ProtoDINO(nn.Module):
         patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
         prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
 
-        if self.initializing:
-            patch_prototype_logits = einsum(
-                patch_tokens_norm,
-                prototype_norm,
-                "B n_patches dim, C K dim -> B n_patches C K"
-            )
-        else:
-            patch_tokens_adpated_norm = self.adapters["feature"](patch_tokens)
-            # prototype_adapted_norm = F.normalize(self.adapters["prototype"](self.prototypes), p=2, dim=-1)
+        # if self.initializing:
+        #     patch_prototype_logits = einsum(
+        #         patch_tokens_norm,
+        #         prototype_norm,
+        #         "B n_patches dim, C K dim -> B n_patches C K"
+        #     )
+        # else:
+        #     patch_tokens_adpated_norm = self.adapters["feature"](patch_tokens)
+        #     # prototype_adapted_norm = F.normalize(self.adapters["prototype"](self.prototypes), p=2, dim=-1)
 
-            patch_prototype_logits = einsum(
-                patch_tokens_adpated_norm,
-                # prototype_adapted_norm,
-                F.normalize(self.learnable_prototypes, p=2, dim=-1),  # DEBUG
-                "B n_patches dim, C K dim -> B n_patches C K"
-            )
+        #     patch_prototype_logits = einsum(
+        #         patch_tokens_adpated_norm,
+        #         # prototype_adapted_norm,
+        #         F.normalize(self.learnable_prototypes, p=2, dim=-1),  # DEBUG
+        #         "B n_patches dim, C K dim -> B n_patches C K"
+        #     )
+
+        patch_tokens_adpated_norm = self.adapters["feature"](patch_tokens)
+        patch_prototype_logits = einsum(
+            patch_tokens_adpated_norm,
+            # prototype_adapted_norm,
+            F.normalize(self.learnable_prototypes, p=2, dim=-1),  # DEBUG
+            "B n_patches dim, C K dim -> B n_patches C K"
+        )
 
         if self.pooling_method == "max":
             image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,], C=n_classes+1
