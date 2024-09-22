@@ -178,17 +178,18 @@ def main():
 
         if is_fine_tuning:
             logger.info("Start fine-tuning...")
+            param_groups = []
             for name, param in net.named_parameters():
                 param.requires_grad = ("backbone" not in name) and ("fg_extractor" not in name)
             
-            if cfg.model.tuning is not None:
+            if (cfg.model.tuning is not None) and (cfg.model.n_splits != 0) and (epoch > 1):
                 net.backbone.set_requires_grad()
-            param_groups = []
-            # param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}] if (cfg.model.n_splits != 0 and cfg.model.tuning is not None) else []
-            param_groups += [
-                # {'params': net.learnable_prototypes, 'lr': cfg.optim.adapter_lr},
-                {'params': net.adapters.parameters(), 'lr': cfg.optim.adapter_lr, 'weight_decay': 1e-3}
-            ] if cfg.model.adapter else []  # DEBUG
+                param_groups += [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}]
+            else:
+                for param in net.backbone.parameters():
+                    param.requires_grad = False
+            
+            param_groups += [{'params': net.adapters.parameters(), 'lr': cfg.optim.adapter_lr, 'weight_decay': 1e-3}] if cfg.model.adapter else []  # DEBUG
             param_groups += [{'params': net.sa, 'lr': cfg.optim.sa_lr}] if cfg.model.cls_head == "sa" else []
             optimizer = optim.SGD(param_groups, momentum=0.9)
             # optimizer = optim.Adam(param_groups)
