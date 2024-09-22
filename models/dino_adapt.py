@@ -117,7 +117,7 @@ class ProtoDINO(nn.Module):
             self.fc = None
             self.sa = None
 
-        self.cls_fc = nn.Linear(self.feature_dim, self.n_classes)
+        # self.cls_fc = nn.Linear(self.feature_dim, self.n_classes)
 
         self.optimizing_prototypes = True
         self.initializing = True
@@ -238,13 +238,13 @@ class ProtoDINO(nn.Module):
             class_logits = image_prototype_logits.sum(-1)  # shape: [B, C,]
             class_logits = class_logits[:, :-1]
         
-        aux_class_logits = self.cls_fc(cls_token)
+        # aux_class_logits = self.cls_fc(cls_token)
 
         outputs = dict(
             patch_prototype_logits=patch_prototype_logits,  # shape: [B, n_patches, C, K,]
             image_prototype_logits=image_prototype_logits,  # shape: [B, C, K,]
             class_logits=class_logits,  # shape: [B, n_classes,]
-            aux_class_logits=aux_class_logits  # shape: B N_classes
+            # aux_class_logits=aux_class_logits  # shape: B N_classes
         )
 
         # if labels is not None:
