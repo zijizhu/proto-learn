@@ -192,21 +192,22 @@ class ProtoDINO(nn.Module):
 
         patch_tokens, cls_token = self.backbone(x)  # shape: [B, n_pathes, dim,]
 
+        patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
+        prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
+
         if self.initializing:
-            patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
-            prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
             patch_prototype_logits = einsum(
                 patch_tokens_norm,
                 prototype_norm,
                 "B n_patches dim, C K dim -> B n_patches C K"
             )
         else:
-            patch_tokens_adpated_norm = self.adapters["feature"](patch_tokens)
-            prototype_adapted_norm = self.adapters["prototype"](self.prototypes)
+            patch_tokens_adapted_norm = self.adapters["feature"](patch_tokens)
+            prototyp_adapted = self.adapters["prototype"](self.prototypes)
 
             patch_prototype_logits = einsum(
-                patch_tokens_adpated_norm,
-                F.normalize(prototype_adapted_norm, p=2, dim=-1),
+                patch_tokens_adapted_norm,
+                F.normalize(prototyp_adapted, p=2, dim=-1),
                 # F.normalize(self.learnable_prototypes, p=2, dim=-1),  # DEBUG
                 "B n_patches dim, C K dim -> B n_patches C K"
             )
