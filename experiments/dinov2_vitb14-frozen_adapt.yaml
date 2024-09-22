@@ -8,7 +8,7 @@ model:
   pooling_method: max
   temperature: 1.0
   cls_head: sa
-  sa_init: 0.5
+  sa_init: 0.2
   fg_extractor: "PCA"
   fg_extractor_args:
     compare_fn: "le"

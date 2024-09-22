@@ -105,17 +105,7 @@ class ProtoDINO(nn.Module):
         self.pooling_method = pooling_method
         self.cls_head = cls_head
 
-        if self.cls_head == "fc":
-            self.fc = nn.Linear(self.n_prototypes * self.n_classes, self.n_classes, bias=False)
-            prototype_class_assiciation = torch.eye(self.n_classes).repeat_interleave(self.n_prototypes, dim=0)
-            self.fc.weight = nn.Parameter((prototype_class_assiciation - 0.5 * (1 - prototype_class_assiciation)).t())
-            self.sa = None
-        elif self.cls_head == "sa":
-            self.fc = None
-            self.sa = nn.Parameter(torch.full((self.n_classes, self.n_prototypes,), sa_init, dtype=torch.float32))
-        else:
-            self.fc = None
-            self.sa = None
+        self.sa = nn.Parameter(torch.full((self.n_classes, self.n_prototypes,), sa_init, dtype=torch.float32))
 
         # self.cls_fc = nn.Linear(self.feature_dim, self.n_classes)
 
@@ -225,27 +215,12 @@ class ProtoDINO(nn.Module):
             "B n_patches dim, C K dim -> B n_patches C K"
         )
 
-        if self.pooling_method == "max":
-            image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,], C=n_classes+1
-        elif self.pooling_method == "sum":
-            image_prototype_logits = patch_prototype_logits.sum(1)  # shape: [B, C, K,], C=n_classes+1
-        else:
-            image_prototype_logits = patch_prototype_logits.mean(1)  # shape: [B, C, K,], C=n_classes+1
+        image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,], C=n_classes+1
 
-        if self.cls_head == "sa" and self.sa is not None:
-            sa_weights = F.softmax(self.sa, dim=-1) * self.n_prototypes
-            # image_prototype_logits_weighted = image_prototype_logits[:, :-1, :] * sa_weights
-            image_prototype_logits_weighted = image_prototype_logits * sa_weights
-            class_logits = image_prototype_logits_weighted.sum(-1) * 10
-        elif self.cls_head == "fc" and self.fc is not None:
-            image_prototype_logits_flat = rearrange(image_prototype_logits[:, :-1, :], "B n_classes K -> B (n_classes K)")
-            class_logits = self.fc(image_prototype_logits_flat.detach())  # shape: [B, n_classes,]
-        elif self.cls_head == "mean":
-            class_logits = image_prototype_logits.mean(-1)  # shape: [B, C,]
-            class_logits = class_logits[:, :-1]
-        else:
-            class_logits = image_prototype_logits.sum(-1)  # shape: [B, C,]
-            class_logits = class_logits[:, :-1]
+        sa_weights = F.softmax(self.sa, dim=-1) * self.n_prototypes
+        # image_prototype_logits_weighted = image_prototype_logits[:, :-1, :] * sa_weights
+        image_prototype_logits_weighted = image_prototype_logits * sa_weights
+        class_logits = image_prototype_logits_weighted.sum(-1)
         
         # aux_class_logits = self.cls_fc(cls_token)
 
