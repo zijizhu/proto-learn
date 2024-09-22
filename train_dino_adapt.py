@@ -153,8 +153,8 @@ def main():
     net = ProtoDINO(
         backbone=backbone,
         dim=dim,
-        # fg_extractor=fg_extractor
-        fg_extractor=None,
+        fg_extractor=fg_extractor,
+        # fg_extractor=None,
         n_prototypes=cfg.model.n_prototypes,
         gamma=cfg.model.get("gamma", 0.99),
         temperature=cfg.model.temperature,

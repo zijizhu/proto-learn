@@ -72,8 +72,8 @@ class ProtoDINO(nn.Module):
         self.gamma = gamma
         self.n_prototypes = n_prototypes
         self.n_classes = n_classes
-        # self.C = n_classes + 1
-        self.C = n_classes
+        self.C = n_classes + 1
+        # self.C = n_classes
         self.backbone = backbone
 
         self.fg_extractor = fg_extractor
@@ -214,8 +214,8 @@ class ProtoDINO(nn.Module):
         image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,], C=n_classes+1
 
         sa_weights = F.softmax(self.sa, dim=-1) * self.n_prototypes
-        # image_prototype_logits_weighted = image_prototype_logits[:, :-1, :] * sa_weights
-        image_prototype_logits_weighted = image_prototype_logits * sa_weights
+        image_prototype_logits_weighted = image_prototype_logits[:, :-1, :] * sa_weights
+        # image_prototype_logits_weighted = image_prototype_logits * sa_weights
         class_logits = image_prototype_logits_weighted.sum(-1)
         
         # aux_class_logits = self.cls_fc(cls_token)
