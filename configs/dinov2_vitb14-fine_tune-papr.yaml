@@ -3,14 +3,14 @@ model:
   tuning: block_expansion
   n_splits: 3
   gamma: 0.99
-  n_prototypes: 5
+  n_prototypes: 10
   temperature: 0.2
   cls_head: sa
   sa_init: 0.5
-  fg_extractor: "PCA"
+  fg_extractor: "PaPr"
   fg_extractor_args:
-    compare_fn: "le"
-    threshold: 0.5
+    backbone: resnet18
+    q: 0.5
   losses:
     l_patch_coef: 0
     l_orth_coef: 0

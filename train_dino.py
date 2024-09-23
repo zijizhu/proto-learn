@@ -13,6 +13,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
+from models.dino import ProtoDINO, ProtoPNetLoss, PaPr, PCA
 from models.backbone import DINOv2BackboneExpanded, MaskCLIP, DINOv2Backbone
 from cub_dataset import CUBDataset, CUBFewShotDataset
 from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
@@ -96,7 +97,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    cfg, log_dir, resume_ckpt = setup_config_and_logging(name="train", base_log_dir="logs")
+    cfg, log_dir, resume_ckpt = setup_config_and_logging(name="train", base_log_dir="logs-23-09")
 
     logger = logging.getLogger(__name__)
 
@@ -139,11 +140,6 @@ def main():
     else:
         raise NotImplementedError("Backbone must be one of dinov2 or clip.")
     
-    if cfg.model.adapter:
-        from models.dino_adapt import ProtoDINO, ProtoPNetLoss, PaPr, PCA
-    else:
-        from models.dino import ProtoDINO, ProtoPNetLoss, PaPr, PCA
-    
     assert cfg.model.fg_extractor in ["PCA", "PaPr"]
     if cfg.model.fg_extractor == "PaPr":
         fg_extractor = PaPr(bg_class=n_classes, **cfg.model.fg_extractor_args)
@@ -157,7 +153,6 @@ def main():
         n_prototypes=cfg.model.n_prototypes,
         gamma=cfg.model.get("gamma", 0.99),
         temperature=cfg.model.temperature,
-        pooling_method=cfg.model.pooling_method,
         cls_head=cfg.model.cls_head,
         sa_init=cfg.model.sa_init
     )
@@ -183,12 +178,16 @@ def main():
             if cfg.model.tuning is not None:
                 net.backbone.set_requires_grad()
 
-            param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}] if (cfg.model.n_splits != 0 and cfg.model.tuning is not None) else []
-            param_groups += [{'params': net.learnable_prototypes, 'lr': cfg.optim.adapter_lr}] if cfg.model.adapter else []  # DEBUG
-            param_groups += [{'params': net.adapters.parameters(), 'lr': cfg.optim.adapter_lr}] if cfg.model.adapter else []
-            param_groups += [{'params': net.cls_fc.parameters(), 'lr': cfg.optim.cls_fc_lr}] if cfg.model.losses.l_aux_coef != 0 else []
-            param_groups += [{'params': net.sa, 'lr': cfg.optim.sa_lr}] if cfg.model.cls_head == "sa" else []
-            optimizer = optim.SGD(param_groups, momentum=0.9)
+            is_tuning_backbone = (cfg.model.n_splits != 0 and cfg.model.tuning is not None)
+            param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}] if is_tuning_backbone else []
+            param_groups += [{'params': net.aux_fc.parameters(), 'lr': cfg.optim.aux_lr}] if cfg.model.losses.l_aux_coef != 0 else []
+            param_groups += [{'params': net.classifier.parameters(), 'lr': cfg.optim.cls_lr}] if cfg.model.cls_head == "sa" else []
+
+            if cfg.optim.optimizer == "SGD":
+                optimizer = optim.SGD(param_groups, momentum=0.9)
+            if cfg.optim.optimizer == "Adam":
+                optimizer = optim.Adam(param_groups)
+
             if cfg.model.get("always_optimize_prototypes", False):
                 net.optimizing_prototypes = True
             else:

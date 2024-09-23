@@ -4,7 +4,7 @@ model:
   n_splits: 3
   gamma: 0.99
   n_prototypes: 5
-  temperature: 0.2
+  temperature: 1.0
   cls_head: sa
   sa_init: 0.5
   fg_extractor: "PCA"

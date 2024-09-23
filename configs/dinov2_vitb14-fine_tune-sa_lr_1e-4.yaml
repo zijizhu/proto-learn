@@ -24,7 +24,7 @@ optim:
   optimizer: SGD
   epochs: 4
   backbone_lr: 0.005
-  cls_lr: 1.0e-06
+  cls_lr: 1.0e-04
   aux_lr: null
   scheduler: null
   fine_tuning_epochs:

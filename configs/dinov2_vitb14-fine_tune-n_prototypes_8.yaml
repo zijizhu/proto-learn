@@ -3,8 +3,7 @@ model:
   tuning: block_expansion
   n_splits: 3
   gamma: 0.99
-  n_prototypes: 5
-  pooling_method: max
+  n_prototypes: 8
   temperature: 0.2
   cls_head: sa
   sa_init: 0.5
@@ -17,26 +16,25 @@ model:
     l_orth_coef: 0
     l_clst_coef: 0
     l_sep_coef: 0
+    l_aux_coef: 0
   always_optimize_prototypes: false
 dataset:
   augmentation: true
 optim:
-  epochs: 5
+  optimizer: SGD
+  epochs: 4
   backbone_lr: 0.005
-  sa_lr: 1.0e-04
-  cls_fc_lr: 1.0e-03
+  cls_lr: 1.0e-06
+  aux_lr: null
   scheduler: null
   fine_tuning_epochs:
-    - 0
     - 1
     - 2
     - 3
-    - 4
 debug:
   epochs:
-    - 0
-    - 1
-    - 2
-    - 3
-    - 4
+  - 0
+  - 1
+  - 2
+  - 3
 seed: 42

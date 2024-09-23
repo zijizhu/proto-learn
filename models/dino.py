@@ -24,6 +24,7 @@ class PaPr(nn.Module):
 
     def forward(self, x: torch.Tensor, y: torch.Tensor, H: int = 16, W: int = 16):
         x = self.proposal(x)  # B dim h w
+
         x = x.mean(dim=1).unsqueeze(1)  # B 1 h w
         x = F.interpolate(x, size=(H, W,), mode="bicubic", align_corners=True)  # B 1 H W
         x = rearrange(x, "B D H W -> B (D H W)", D=1, H=H, W=W)
@@ -63,9 +64,21 @@ class PCA(nn.Module):
 
         return pseudo_patch_labels.to(dtype=torch.long)  # B H W
 
+class ScoreAggregation(nn.Module):
+    def __init__(self, init_val: float = 0.2, n_classes: int = 200, n_prototypes: int = 5) -> None:
+        super().__init__()
+        self.weights = nn.Parameter(torch.full((n_classes, n_prototypes,), init_val, dtype=torch.float32))
+    
+    def forward(self, x: torch.Tensor):
+        n_classes, n_prototypes = self.weights.shape
+        sa_weights = F.softmax(self.weights, dim=-1) * n_prototypes
+        x = x * sa_weights  # B C K
+        x = x.sum(-1)  # B C
+        return x
+
 
 class ProtoDINO(nn.Module):
-    def __init__(self, backbone: nn.Module, pooling_method: str, cls_head: str, fg_extractor: nn.Module,
+    def __init__(self, backbone: nn.Module, fg_extractor: nn.Module, cls_head: str,
                  *, gamma: float = 0.999, n_prototypes: int = 5, n_classes: int = 200,
                  temperature: float = 0.2, sa_init: float = 0.5, dim: int = 768):
         super().__init__()
@@ -83,24 +96,16 @@ class ProtoDINO(nn.Module):
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
 
-        assert pooling_method in ["sum", "avg", "max"]
-        assert cls_head in ["fc", "sum", "avg", 'sa']
-        self.pooling_method = pooling_method
-        self.cls_head = cls_head
-
-        if self.cls_head == "fc":
-            self.fc = nn.Linear(self.n_prototypes * self.n_classes, self.n_classes, bias=False)
+        if cls_head == "fc":
+            self.classifier = nn.Linear(self.n_prototypes * self.n_classes, self.n_classes, bias=False)
             prototype_class_assiciation = torch.eye(self.n_classes).repeat_interleave(self.n_prototypes, dim=0)
-            self.fc.weight = nn.Parameter((prototype_class_assiciation - 0.5 * (1 - prototype_class_assiciation)).t())
-            self.sa = None
-        elif self.cls_head == "sa":
-            self.fc = None
-            self.sa = nn.Parameter(torch.full((self.n_classes, self.n_prototypes,), sa_init, dtype=torch.float32))
+            self.classifier.weight = nn.Parameter((prototype_class_assiciation - 0.5 * (1 - prototype_class_assiciation)).t())
+        elif cls_head == "sa":
+            self.classifier = ScoreAggregation(init_val=sa_init, n_classes=n_classes, n_prototypes=n_prototypes)
         else:
-            self.fc = None
-            self.sa = None
+            raise NotImplementedError
 
-        self.cls_fc = nn.Linear(self.dim, self.n_classes)
+        self.aux_fc = nn.Linear(self.dim, self.n_classes)
 
         self.optimizing_prototypes = True
         self.initializing = True
@@ -185,29 +190,12 @@ class ProtoDINO(nn.Module):
 
         patch_prototype_logits = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
 
-        if self.pooling_method == "max":
-            image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,], C=n_classes+1
-        elif self.pooling_method == "sum":
-            image_prototype_logits = patch_prototype_logits.sum(1)  # shape: [B, C, K,], C=n_classes+1
-        else:
-            image_prototype_logits = patch_prototype_logits.mean(1)  # shape: [B, C, K,], C=n_classes+1
+        image_prototype_logits = patch_prototype_logits.max(1).values  # shape: [B, C, K,], C=n_classes+1
 
-        if self.cls_head == "sa" and self.sa is not None:
-            sa_weights = F.softmax(self.sa, dim=-1) * self.n_prototypes
-            image_prototype_logits_weighted = image_prototype_logits[:, :-1, :] * sa_weights
-            class_logits = image_prototype_logits_weighted.sum(-1)
-        elif self.cls_head == "fc" and self.fc is not None:
-            image_prototype_logits_flat = rearrange(image_prototype_logits[:, :-1, :], "B n_classes K -> B (n_classes K)")
-            class_logits = self.fc(image_prototype_logits_flat.detach())  # shape: [B, n_classes,]
-        elif self.cls_head == "mean":
-            class_logits = image_prototype_logits.mean(-1)  # shape: [B, C,]
-            class_logits = class_logits[:, :-1]
-        else:
-            class_logits = image_prototype_logits.sum(-1)  # shape: [B, C,]
-            class_logits = class_logits[:, :-1]
+        class_logits = self.classifier(image_prototype_logits[:, :-1, :])
         
-        class_logits /= self.temperature
-        aux_class_logits = self.cls_fc(cls_token)
+        class_logits = class_logits / self.temperature
+        aux_class_logits = self.aux_fc(cls_token)
 
         outputs = dict(
             patch_prototype_logits=patch_prototype_logits,  # shape: [B, n_patches, C, K,]
@@ -218,12 +206,16 @@ class ProtoDINO(nn.Module):
 
         if labels is not None:
             if self.initializing:
-                pseudo_patch_labels = self.fg_extractor(patch_tokens_norm.detach(), labels)
+                if isinstance(self.fg_extractor, PaPr):
+                    pseudo_patch_labels = self.fg_extractor(x, labels)
+                else:
+                    pseudo_patch_labels = self.fg_extractor(patch_tokens_norm.detach(), labels)
             else:
                 pseudo_patch_labels = self.get_fg_by_similarity(
                     patch_prototype_logits=patch_prototype_logits.detach(),
                     labels=labels
                 )
+            pseudo_patch_labels = pseudo_patch_labels.detach()
 
             part_assignment_maps, new_prototypes = self.online_clustering(
                 prototypes=self.prototypes,
@@ -254,6 +246,7 @@ class ProtoPNetLoss(nn.Module):
             l_clst_coef: float,
             l_patch_coef: float,
             l_sep_coef: float,
+            l_aux_coef: float,
             num_classes: int = 200,
             n_prototypes: int = 5,
             temperature: float = 0.1,
@@ -264,6 +257,7 @@ class ProtoPNetLoss(nn.Module):
         self.l_clst_coef = l_clst_coef
         self.l_patch_coef = l_patch_coef
         self.l_sep_coef = l_sep_coef
+        self.l_aux_coef = l_aux_coef
         self.xe = nn.CrossEntropyLoss()
         self.xe_aux = nn.CrossEntropyLoss()
 
@@ -280,7 +274,11 @@ class ProtoPNetLoss(nn.Module):
 
         loss_dict = dict()
         loss_dict["l_y"] = self.xe(logits, labels)
-        loss_dict["l_y_aux"] = self.xe_aux(aux_logits, labels)
+
+        if self.l_aux_coef != 0:
+            l_y_aux = self.xe_aux(aux_logits, labels)
+            loss_dict["l_aux"] = self.l_aux_coef * l_y_aux
+            loss_dict["_l_aux_raw"] = loss_dict["l_y_aux"]
 
         if self.l_patch_coef != 0:
             l_patch = self.compute_patch_contrastive_cost(

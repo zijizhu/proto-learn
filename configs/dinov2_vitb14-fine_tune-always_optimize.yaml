@@ -17,7 +17,7 @@ model:
     l_clst_coef: 0
     l_sep_coef: 0
     l_aux_coef: 0
-  always_optimize_prototypes: false
+  always_optimize_prototypes: true
 dataset:
   augmentation: true
 optim:

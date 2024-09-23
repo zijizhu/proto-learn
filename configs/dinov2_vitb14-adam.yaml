@@ -21,9 +21,9 @@ model:
 dataset:
   augmentation: true
 optim:
-  optimizer: SGD
+  optimizer: Adam
   epochs: 4
-  backbone_lr: 0.005
+  backbone_lr: 0.001
   cls_lr: 1.0e-06
   aux_lr: null
   scheduler: null

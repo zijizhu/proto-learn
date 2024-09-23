@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from cub_dataset import CUBEvalDataset
 from eval.consistency import evaluate_consistency
-from models.backbone import DINOv2BackboneExpanded, MaskCLIP
+from models.backbone import DINOv2BackboneExpanded, MaskCLIP, DINOv2Backbone
 from models.dino import PCA, PaPr, ProtoDINO
 from utils.config import load_config_and_logging
 from utils.visualization import (
@@ -213,6 +213,7 @@ def main():
 
     L.seed_everything(cfg.seed)
     
+    n_classes = 200
     dataset_dir = Path("datasets") / "cub200_cropped"
     annotations_path = Path("datasets") / "CUB_200_2011"
 
@@ -220,15 +221,17 @@ def main():
     dataloader_eval = DataLoader(dataset_eval, shuffle=True, batch_size=128)
     
     if "dino" in cfg.model.name:
-        backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
+        if cfg.model.n_splits and cfg.model.n_splits > 0:
+            backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
+        else:
+            backbone = DINOv2Backbone(name=cfg.model.name)
         dim = backbone.dim
     elif cfg.model.name.lower().startswith("clip"):
         backbone = MaskCLIP(name=cfg.model.name.split("-", 1)[1])
         dim = 512
     else:
         raise NotImplementedError("Backbone must be one of dinov2 or clip.")
-    n_classes = 200
-
+    
     assert cfg.model.fg_extractor in ["PCA", "PaPr"]
     if cfg.model.fg_extractor == "PaPr":
         fg_extractor = PaPr(bg_class=n_classes, **cfg.model.fg_extractor_args)
@@ -242,7 +245,6 @@ def main():
         n_prototypes=cfg.model.n_prototypes,
         gamma=cfg.model.get("gamma", 0.99),
         temperature=cfg.model.temperature,
-        pooling_method=cfg.model.pooling_method,
         cls_head=cfg.model.cls_head,
         sa_init=cfg.model.sa_init
     )
@@ -257,13 +259,13 @@ def main():
     
     writer = SummaryWriter(log_dir=log_dir)
 
-    # logger.info("Evaluating accuracy...")
-    # eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
+    logger.info("Evaluating accuracy...")
+    eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
     
-    # logger.info("Evaluating class-wise NMI and ARI...")
-    # mean_nmi, mean_ari = eval_nmi_ari(net=net, dataloader=dataloader_eval, device=device)
-    # logger.info(f"Mean class-wise NMI: {float(mean_nmi)}")
-    # logger.info(f"Mean class-wise ARI: {float(mean_ari)}")
+    logger.info("Evaluating class-wise NMI and ARI...")
+    mean_nmi, mean_ari = eval_nmi_ari(net=net, dataloader=dataloader_eval, device=device)
+    logger.info(f"Mean class-wise NMI: {float(mean_nmi)}")
+    logger.info(f"Mean class-wise ARI: {float(mean_ari)}")
 
     # Monkey-patch the model class to make it compatible with eval script
     ProtoDINO.push_forward = push_forward

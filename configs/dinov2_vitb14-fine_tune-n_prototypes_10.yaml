@@ -3,7 +3,7 @@ model:
   tuning: block_expansion
   n_splits: 3
   gamma: 0.99
-  n_prototypes: 5
+  n_prototypes: 10
   temperature: 0.2
   cls_head: sa
   sa_init: 0.5
