@@ -22,7 +22,7 @@ STD = (0.229, 0.224, 0.225,)
 INPUT_SIZE = 224
 BATCH_SIZE = 16
 
-N_PROTOTYPES = 10
+N_PROTOTYPES = 5
 DIM = 768
 GAMMA = 0.2  # coefficient of OLD value
 
@@ -34,7 +34,7 @@ NCOLS = NROWS = int(sqrt(BATCH_SIZE))
 
 def get_foreground_by_PCA(patch_tokens: torch.Tensor,
                           labels: torch.Tensor,
-                          pca_threshold: float = 0.7,
+                          pca_threshold: float = 0.5,
                           pca_compare_fn: Callable = torch.le,
                           bg_label: int = 200):
     B, n_patches, dim = patch_tokens.shape
@@ -69,11 +69,9 @@ if __name__ == "__main__":
     ])
 
     dataset_train = CUBDataset((dataset_dir / "train_cropped").as_posix(),
-                                attribute_labels_path.as_posix(),
                                 transforms=transforms)
     dataset_test = CUBDataset((dataset_dir / "test_cropped").as_posix(),
-                            attribute_labels_path.as_posix(),
-                            transforms=transforms)
+                              transforms=transforms)
     dataloader_train = DataLoader(dataset=dataset_train, batch_size=80, num_workers=8, shuffle=False)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=100, num_workers=8, shuffle=False)
 
@@ -83,7 +81,7 @@ if __name__ == "__main__":
         features = net.forward_features(x)['x_norm_patchtokens']  # type: torch.Tensor
         return features
 
-    net = torch.hub.load('facebookresearch/dinov2', "dinov2_vitb14_reg")
+    net = torch.hub.load('facebookresearch/dinov2', "dinov2_vits14_reg")
     #### Initialize model ####
 
     class_subset = [(path, label,) for (path, label,) in dataset_train.samples if label == CLASS_ID]

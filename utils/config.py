@@ -8,7 +8,8 @@ from omegaconf import OmegaConf
 
 def setup_config_and_logging(name: str, base_log_dir: str = "logs"):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config_path", "-c", type=str)
+    parser.add_argument("--config_path", "-c", type=str, required=True)
+    parser.add_argument("--base_log_dir", "-l", type=str, default="logs")
     parser.add_argument("--resume_ckpt", "-r", type=str)
     parser.add_argument("--options", "-o", nargs="+", default=[])
 
@@ -18,8 +19,7 @@ def setup_config_and_logging(name: str, base_log_dir: str = "logs"):
     config = OmegaConf.load(config_path)
     config.merge_with_dotlist(args.options)
 
-    log_dir = Path(base_log_dir)
-    log_dir = log_dir / config_path.stem
+    log_dir = Path(args.base_log_dir) / config_path.stem
     log_dir.mkdir(parents=True, exist_ok=True)
 
     print("Configuration:")

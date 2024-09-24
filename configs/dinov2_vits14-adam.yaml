@@ -9,7 +9,7 @@ model:
   sa_init: 0.5
   fg_extractor: "PCA"
   fg_extractor_args:
-    compare_fn: "le"
+    compare_fn: "ge"
     threshold: 0.5
   losses:
     l_patch_coef: 0

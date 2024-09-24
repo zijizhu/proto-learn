@@ -166,6 +166,7 @@ def main():
     writer = SummaryWriter(log_dir=log_dir.as_posix())
 
     best_epoch, best_val_acc = 0, 0.
+    lr_decay = 1
     for epoch in range(cfg.optim.epochs):
         is_fine_tuning = epoch in cfg.optim.fine_tuning_epochs
         is_debugging = epoch in cfg.debug.epochs
@@ -179,19 +180,14 @@ def main():
                 net.backbone.set_requires_grad()
 
             is_tuning_backbone = (cfg.model.n_splits != 0 and cfg.model.tuning is not None)
-            param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}] if is_tuning_backbone else []
-            param_groups += [{'params': net.aux_fc.parameters(), 'lr': cfg.optim.aux_lr}] if cfg.model.losses.l_aux_coef != 0 else []
-            param_groups += [{'params': net.classifier.parameters(), 'lr': cfg.optim.cls_lr}] if cfg.model.cls_head == "sa" else []
+            param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr * lr_decay}] if is_tuning_backbone else []
+            param_groups += [{'params': net.aux_fc.parameters(), 'lr': cfg.optim.aux_lr * lr_decay}] if cfg.model.losses.l_aux_coef != 0 else []
+            param_groups += [{'params': net.classifier.parameters(), 'lr': cfg.optim.cls_lr * lr_decay}] if cfg.model.cls_head == "sa" else []
 
             if cfg.optim.optimizer == "SGD":
                 optimizer = optim.SGD(param_groups, momentum=0.9)
             if cfg.optim.optimizer == "Adam":
                 optimizer = optim.Adam(param_groups)
-            
-            if cfg.optim.get("scheduler", None):
-                scheduler = optim.lr_scheduler.StepLR(optimizer, **cfg.optim.scheduler)
-            else:
-                scheduler = None
 
             if cfg.model.get("always_optimize_prototypes", False):
                 net.optimizing_prototypes = True
@@ -201,7 +197,6 @@ def main():
             for params in net.parameters():
                 params.requires_grad = False
             optimizer = None
-            scheduler = None
             net.optimizing_prototypes = True
 
         if (epoch > 0) or (resume_ckpt is not None):
@@ -210,6 +205,7 @@ def main():
         print_parameters(net=net, logger=logger)
         logger.info(f"net.initializing: {net.initializing}")
         logger.info(f"net.optimizing_prototypes: {net.optimizing_prototypes}")
+        logger.info(f"lr_decay: {lr_decay}")
 
         train_epoch(
             model=net,
@@ -223,8 +219,8 @@ def main():
             debug=is_debugging
         )
 
-        if scheduler:
-            scheduler.step()
+        gamma = cfg.optim.scheduler.get("gamma", 1) if cfg.optim.scheduler else 1
+        lr_decay *= gamma
 
         epoch_acc_val = val_epoch(model=net, dataloader=dataloader_test, epoch=epoch,
                                   writer=writer, logger=logger, device=device)
