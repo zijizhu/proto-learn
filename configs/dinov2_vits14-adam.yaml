@@ -1,5 +1,5 @@
 model:
-  name: dinov2_vitb14_reg4
+  name: dinov2_vits14_reg4
   tuning: block_expansion
   n_splits: 3
   gamma: 0.99
@@ -12,7 +12,7 @@ model:
     compare_fn: "le"
     threshold: 0.5
   losses:
-    l_patch_coef: 0.1
+    l_patch_coef: 0
     l_orth_coef: 0
     l_clst_coef: 0
     l_sep_coef: 0
@@ -21,12 +21,12 @@ model:
 dataset:
   augmentation: true
 optim:
-  optimizer: SGD
+  optimizer: Adam
+  scheduler: null
   epochs: 4
-  backbone_lr: 0.005
+  backbone_lr: 0.001
   cls_lr: 1.0e-06
   aux_lr: null
-  scheduler: null
   fine_tuning_epochs:
     - 1
     - 2

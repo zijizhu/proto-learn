@@ -187,6 +187,11 @@ def main():
                 optimizer = optim.SGD(param_groups, momentum=0.9)
             if cfg.optim.optimizer == "Adam":
                 optimizer = optim.Adam(param_groups)
+            
+            if cfg.optim.get("scheduler", None):
+                scheduler = optim.lr_scheduler.StepLR(optimizer, **cfg.optim.scheduler)
+            else:
+                scheduler = None
 
             if cfg.model.get("always_optimize_prototypes", False):
                 net.optimizing_prototypes = True
@@ -196,6 +201,7 @@ def main():
             for params in net.parameters():
                 params.requires_grad = False
             optimizer = None
+            scheduler = None
             net.optimizing_prototypes = True
 
         if (epoch > 0) or (resume_ckpt is not None):
@@ -216,6 +222,9 @@ def main():
             device=device,
             debug=is_debugging
         )
+
+        if scheduler:
+            scheduler.step()
 
         epoch_acc_val = val_epoch(model=net, dataloader=dataloader_test, epoch=epoch,
                                   writer=writer, logger=logger, device=device)
