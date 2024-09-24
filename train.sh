@@ -12,14 +12,16 @@ declare -a filenames=(
 # "dinov2_vitb14-fine_tune-temp_0.5"
 # "dinov2_vitb14-fine_tune-temp_1.0"
 # "dinov2_vitb14-fine_tune"
+# "dinov2_vitb14-adam-l_dense_0.1"
+# "dinov2_vitb14-adam-l_dense_1.0"
 # TODO run eval
 # "dinov2_vitb14-contrast"
 # TODO re-run
-# "dinov2_vitb14-adam-step_0.1"
-# "dinov2_vits14-adam"
-# "dinov2_vits14-base"
-"dinov2_vitb14-adam-l_dense_0.1"
-"dinov2_vitb14-adam-l_dense_1.0"
+"dinov2_vitb14-adam-step_0.1"
+"dinov2_vitb14-adam-step_0.01"
+"dinov2_vits14-adam"
+"dinov2_vits14-base"
+"dinov2_vits14-adam-step_0.1"
 )
 
 for f in "${filenames[@]}"

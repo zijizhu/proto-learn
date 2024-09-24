@@ -22,7 +22,8 @@ dataset:
   augmentation: true
 optim:
   optimizer: Adam
-  scheduler: null
+  scheduler:
+    gamma: 0.1
   epochs: 4
   backbone_lr: 0.001
   cls_lr: 1.0e-06

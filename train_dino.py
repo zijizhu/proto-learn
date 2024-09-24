@@ -167,6 +167,8 @@ def main():
 
     best_epoch, best_val_acc = 0, 0.
     lr_decay = 1
+    gamma = cfg.optim.scheduler.get("gamma", 1) if cfg.optim.scheduler else 1
+
     for epoch in range(cfg.optim.epochs):
         is_fine_tuning = epoch in cfg.optim.fine_tuning_epochs
         is_debugging = epoch in cfg.debug.epochs
@@ -219,7 +221,6 @@ def main():
             debug=is_debugging
         )
 
-        gamma = cfg.optim.scheduler.get("gamma", 1) if cfg.optim.scheduler else 1
         lr_decay *= gamma
 
         epoch_acc_val = val_epoch(model=net, dataloader=dataloader_test, epoch=epoch,

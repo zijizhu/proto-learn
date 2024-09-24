@@ -23,7 +23,7 @@ INPUT_SIZE = 224
 BATCH_SIZE = 16
 
 N_PROTOTYPES = 5
-DIM = 768
+DIM = 384
 GAMMA = 0.2  # coefficient of OLD value
 
 CLASS_ID = 15
