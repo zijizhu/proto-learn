@@ -65,7 +65,7 @@ class PCA(nn.Module):
 
 
 class ProtoDINO(nn.Module):
-    def __init__(self, backbone: nn.Module, pooling_method: str, cls_head: str, fg_extractor: nn.Module,
+    def __init__(self, backbone: nn.Module, fg_extractor: nn.Module,
                  *, adapter_type: str = "regular", gamma: float = 0.999, n_prototypes: int = 5, n_classes: int = 200,
                  temperature: float = 0.2, sa_init: float = 0.5, dim: int = 768):
         super().__init__()
@@ -109,14 +109,7 @@ class ProtoDINO(nn.Module):
         self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.feature_dim))
         self.temperature = temperature
 
-        assert pooling_method in ["sum", "avg", "max"]
-        assert cls_head in ["fc", "sum", "avg", 'sa']
-        self.pooling_method = pooling_method
-        self.cls_head = cls_head
-
         self.sa = nn.Parameter(torch.full((self.n_classes, self.n_prototypes,), sa_init, dtype=torch.float32))
-
-        # self.cls_fc = nn.Linear(self.feature_dim, self.n_classes)
 
         self.optimizing_prototypes = True
         self.initializing = True
@@ -192,9 +185,6 @@ class ProtoDINO(nn.Module):
 
         return torch.where(fg_mask, repeat(labels, "B -> B H W", H=H, W=W), C-1)
 
-    def normalize_prototypes(self):
-        self.learnable_prototypes.data = F.normalize(self.learnable_prototypes.data, p=2, dim=-1)
-
     def forward(self, x: torch.Tensor, labels: torch.Tensor | None = None,
                 *, use_gumbel: bool = False):
         assert (not self.training) or (labels is not None)
@@ -211,30 +201,34 @@ class ProtoDINO(nn.Module):
                 "B n_patches dim, C K dim -> B n_patches C K"
             )
         else:
-            patch_tokens_adapted_norm = self.adapters["feature"](patch_tokens)
-            prototyp_adapted = self.adapters["prototype"](self.prototypes)
+            patch_tokens_adapted = self.adapters["feature"](patch_tokens)
+            prototype_adapted = self.adapters["prototype"](self.prototypes)
 
             patch_prototype_logits = einsum(
-                patch_tokens_adapted_norm,
-                F.normalize(prototyp_adapted, p=2, dim=-1),
-                # F.normalize(self.learnable_prototypes, p=2, dim=-1),  # DEBUG
+                patch_tokens_adapted,
+                F.normalize(prototype_adapted, p=2, dim=-1),
                 "B n_patches dim, C K dim -> B n_patches C K"
             )
+
+            patch_prototype_similarities = einsum(
+                F.normalize(patch_tokens_adapted, p=2, dim=-1),
+                F.normalize(prototype_adapted, p=2, dim=-1),
+                "B n_patches dim, C K dim -> B n_patches C K"
+            )
+            image_prototype_similarities = patch_prototype_similarities.max(dim=1).values
 
         image_prototype_logits, _ = patch_prototype_logits.max(1)  # shape: [B, C, K,], C=n_classes+1
 
         sa_weights = F.softmax(self.sa, dim=-1) * self.n_prototypes
         image_prototype_logits_weighted = image_prototype_logits[:, :-1, :] * sa_weights
-        # image_prototype_logits_weighted = image_prototype_logits * sa_weights
         class_logits = image_prototype_logits_weighted.sum(-1)
-        
-        # aux_class_logits = self.cls_fc(cls_token)
 
         outputs = dict(
             patch_prototype_logits=patch_prototype_logits,  # shape: [B, n_patches, C, K,]
+            image_prototype_similarities=None if self.initializing else image_prototype_similarities,
             image_prototype_logits=image_prototype_logits,  # shape: [B, C, K,]
             class_logits=class_logits,  # shape: [B, n_classes,]
-            # aux_class_logits=aux_class_logits  # shape: B N_classes
+            projected_prototypes=None if self.initializing else prototype_adapted,
         )
 
         if labels is not None:
@@ -288,7 +282,7 @@ class ProtoPNetLoss(nn.Module):
         self.l_sep_coef = l_sep_coef
         self.l_aux_coef = l_aux_coef
         self.xe = nn.CrossEntropyLoss()
-        self.xe_aux = nn.CrossEntropyLoss()
+        # self.xe_aux = nn.CrossEntropyLoss()
 
         self.C = num_classes
         self.K = n_prototypes
@@ -296,10 +290,8 @@ class ProtoPNetLoss(nn.Module):
         self.temperature = temperature
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: tuple[torch.Tensor, ...]):
-        # logits, aux_logits, similarities = outputs["class_logits"], outputs["aux_class_logits"], outputs["image_prototype_logits"]
-        # patch_prototype_logits = outputs["patch_prototype_logits"]
-        # features, part_assignment_maps, fg_masks = outputs["patches"], outputs["part_assignment_maps"], outputs["pseudo_patch_labels"]
         logits, similarities = outputs["class_logits"], outputs["image_prototype_logits"]
+        projected_prototypes = outputs["projected_prototypes"]
         _, labels, _ = batch
 
         loss_dict = dict()
@@ -308,26 +300,10 @@ class ProtoPNetLoss(nn.Module):
         # if self.l_aux_coef != 0:
         #     loss_dict["l_y_aux"] = self.xe_aux(aux_logits, labels)
 
-        # if self.l_patch_coef != 0:
-        #     l_patch = self.compute_patch_contrastive_cost(
-        #         patch_prototype_logits,
-        #         part_assignment_maps,
-        #         class_weight=self.class_weights.to(dtype=torch.float32, device=logits.device),
-        #         temperature=self.temperature
-        #     )
-        #     loss_dict["l_patch"] = self.l_patch_coef * l_patch
-        #     loss_dict["_l_patch_raw"] = l_patch
-
-        # if self.l_orth_coef != 0:
-        #     l_orth = self.compute_orthogonality_costs(
-        #         features=features,
-        #         part_assignment_maps=part_assignment_maps,
-        #         fg_masks=fg_masks,
-        #         n_prototypes=self.K,
-        #         bg_class_index=self.C
-        #     )
-        #     loss_dict["l_orth"] = self.l_orth_coef * l_orth
-        #     loss_dict["_l_orth_raw"] = l_orth
+        if self.l_orth_coef != 0:
+            l_orth = self.compute_orthonormality_costs(projected_prototypes=projected_prototypes)
+            loss_dict["l_orth"] = self.l_orth_coef * l_orth
+            loss_dict["_l_orth_raw"] = l_orth
 
         if self.l_clst_coef != 0 and self.l_sep_coef != 0:
             l_clst, l_sep = self.compute_prototype_costs(similarities, labels, num_classes=self.C + 1)
@@ -337,42 +313,23 @@ class ProtoPNetLoss(nn.Module):
             loss_dict["_l_sep_raw"] = l_sep
 
         return loss_dict
-
-    @staticmethod
-    def compute_patch_contrastive_cost(patch_prototype_logits: torch.Tensor,
-                                       patch_prototype_assignments: torch.Tensor,
-                                       class_weight: torch.Tensor,
-                                       temperature: float = 0.1):
-        patch_prototype_logits = rearrange(patch_prototype_logits, "B N C K -> B (C K) N") / temperature
-        loss = F.cross_entropy(patch_prototype_logits, target=patch_prototype_assignments, weight=class_weight)
-        return loss
     
     @staticmethod
-    def compute_orthogonality_costs(features: torch.Tensor,
-                                    part_assignment_maps: torch.Tensor,
-                                    fg_masks: torch.Tensor,
-                                    n_prototypes: int,
-                                    bg_class_index: int):
-        fg_masks = rearrange(fg_masks, "B H W -> B (H W)")
-        B, n_patches, dim = features.shape
-
-        # Mask pooling
-        part_assignment_maps = torch.where(fg_masks == bg_class_index, n_prototypes, part_assignment_maps)  # Set background patches to assignment value of n_prototypes
-        assignment_masks = F.one_hot(part_assignment_maps, num_classes=n_prototypes + 1).to(dtype=torch.float32)  # B (HW) K
-        mean_part_features = einsum(assignment_masks, features, "B HW K, B HW dim -> B K dim")
-        
-        mean_part_features = F.normalize(mean_part_features, p=2, dim=-1)
-
-        cosine_similarities = torch.bmm(mean_part_features, rearrange(mean_part_features, "B K dim -> B dim K"))  # shape: B K dim, B dim K -> B K K
-        cosine_similarities -= repeat(torch.eye(n_prototypes + 1, device=features.device), "H W -> B H W", B=B)
-
-        return torch.sum(F.relu(torch.abs(cosine_similarities)))
+    def compute_orthonormality_costs(projected_prototypes: torch.Tensor):
+        C, K, D = projected_prototypes.shape
+        orth = torch.bmm(projected_prototypes, rearrange(projected_prototypes, "C K D -> C D K"))  # C K K
+        orth = torch.linalg.matrix_norm(orth - torch.eye(K, device=orth.device), dim=(-1, -2,), ord="fro")
+        return torch.sum(F.relu(orth))
 
     @staticmethod
     def compute_prototype_costs(similarities: torch.Tensor, labels: torch.Tensor, num_classes: int):
-        positives = F.one_hot(labels, num_classes=num_classes).to(dtype=torch.float32)
+        positives = F.one_hot(labels, num_classes=num_classes).unsqueeze(dim=-1).to(dtype=torch.float32)
         negatives = 1 - positives
-        cluster_cost = torch.mean(similarities.max(-1).values * positives)
-        separation_cost = torch.mean(similarities.max(-1).values * negatives)
 
-        return cluster_cost, separation_cost
+        print(similarities.shape)
+        print(positives.shape)
+
+        cluster_cost = (similarities * positives).max(dim=-1).values.max(dim=-1).values
+        separation_cost = (similarities * negatives).max(dim=-1).values.max(dim=-1).values
+
+        return torch.mean(cluster_cost), torch.mean(separation_cost)

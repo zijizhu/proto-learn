@@ -79,7 +79,7 @@ class ScoreAggregation(nn.Module):
 
 class ProtoDINO(nn.Module):
     def __init__(self, backbone: nn.Module, fg_extractor: nn.Module, cls_head: str,
-                 *, gamma: float = 0.999, n_prototypes: int = 5, n_classes: int = 200,
+                 *, always_norm_patches: bool = True, gamma: float = 0.999, n_prototypes: int = 5, n_classes: int = 200,
                  temperature: float = 0.2, sa_init: float = 0.5, dim: int = 768):
         super().__init__()
         self.gamma = gamma
@@ -109,6 +109,7 @@ class ProtoDINO(nn.Module):
 
         self.optimizing_prototypes = True
         self.initializing = True
+        self.always_norm_patches = always_norm_patches
 
     @staticmethod
     def online_clustering(prototypes: torch.Tensor,
@@ -188,7 +189,10 @@ class ProtoDINO(nn.Module):
         patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
         prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
 
-        patch_prototype_logits = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
+        if (not self.initializing) and (not self.always_norm_patches):
+            patch_prototype_logits = einsum(patch_tokens, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
+        else:
+            patch_prototype_logits = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
 
         image_prototype_logits = patch_prototype_logits.max(1).values  # shape: [B, C, K,], C=n_classes+1
 
@@ -367,7 +371,8 @@ class ProtoPNetLoss(nn.Module):
     def compute_prototype_costs(similarities: torch.Tensor, labels: torch.Tensor, num_classes: int):
         positives = F.one_hot(labels, num_classes=num_classes).to(dtype=torch.float32)
         negatives = 1 - positives
-        cluster_cost = torch.mean(similarities.max(-1).values * positives)
-        separation_cost = torch.mean(similarities.max(-1).values * negatives)
 
-        return cluster_cost, separation_cost
+        cluster_cost = (similarities * positives).max(dim=-1).values.max(dim=-1).values
+        separation_cost = (similarities * negatives).max(dim=-1).values.max(dim=-1).values
+
+        return torch.mean(cluster_cost), torch.mean(separation_cost)

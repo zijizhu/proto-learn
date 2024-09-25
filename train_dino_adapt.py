@@ -15,7 +15,6 @@ from tqdm import tqdm
 
 from models.backbone import DINOv2BackboneExpanded, MaskCLIP, DINOv2Backbone
 from cub_dataset import CUBDataset, CUBFewShotDataset
-from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
 from utils.config import setup_config_and_logging
 from models.utils import print_parameters
 
@@ -46,14 +45,6 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
 
         mca_train(outputs["class_logits"], labels)
 
-        # if debug and i == 0:
-        #     batch_size, _, input_size, input_size = images.shape
-        #     batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
-        #     visualize_topk_prototypes(outputs, batch_im_paths, writer, step=epoch, input_size=input_size,
-        #                               tag_fmt_str="Training first batch top{topk} prototypes/epoch {step}/{idx}")
-        #     visualize_prototype_assignments(outputs, writer, step=epoch,
-        #                                     tag=f"Training first batch prototype assignments/epoch {epoch}")
-
     for k, v in running_losses.items():
         loss_avg = v / len(dataloader.dataset)
         writer.add_scalar(f"Loss/{k}", loss_avg, epoch)
@@ -77,14 +68,6 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
         outputs = model(images, labels=labels)
 
         mca_val(outputs["class_logits"], labels)
-
-        # if debug and i == 0:
-        #     batch_size, input_size, input_size = images.shape
-        #     batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
-        #     visualize_topk_prototypes(outputs, batch_im_paths, writer, step=epoch, input_size=input_size,
-        #                               tag_fmt_str="Training epoch {step} batch 0 top{topk} prototypes/{idx}")
-        #     visualize_prototype_assignments(outputs, labels, writer, step=epoch,
-        #                                     tag=f"Validation epoch {epoch} batch {i} prototype assignments")
 
     epoch_acc_val = mca_val.compute().item()
     writer.add_scalar("Acc/val", epoch_acc_val, epoch)
@@ -154,13 +137,10 @@ def main():
         backbone=backbone,
         dim=dim,
         fg_extractor=fg_extractor,
-        # fg_extractor=None,
         adapter_type=cfg.model.get("adapter_type", "regular"),
         n_prototypes=cfg.model.n_prototypes,
         gamma=cfg.model.get("gamma", 0.99),
         temperature=cfg.model.temperature,
-        pooling_method=cfg.model.pooling_method,
-        cls_head=cfg.model.cls_head,
         sa_init=cfg.model.sa_init
     )
     if resume_ckpt:
@@ -191,7 +171,7 @@ def main():
                     param.requires_grad = False
             
             param_groups += [{'params': net.adapters.parameters(), 'lr': cfg.optim.adapter_lr, 'weight_decay': 1e-3}] if cfg.model.adapter else []  # DEBUG
-            param_groups += [{'params': net.sa, 'lr': cfg.optim.sa_lr}] if cfg.model.cls_head == "sa" else []
+            param_groups += [{'params': net.sa, 'lr': cfg.optim.cls_lr}]
             if cfg.optim.get("optimizer", "sgd") == "adam":
                 optimizer = optim.Adam(param_groups)
             else:
@@ -208,6 +188,7 @@ def main():
 
         if (epoch > 0) or (resume_ckpt is not None):
             net.initializing = False
+        net.initializing = False
 
         print_parameters(net=net, logger=logger)
         logger.info(f"net.initializing: {net.initializing}")
