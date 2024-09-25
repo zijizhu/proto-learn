@@ -14,7 +14,7 @@ model:
     threshold: 0.5
   losses:
     l_patch_coef: 0
-    l_orth_coef: 0.01
+    l_orth_coef: 0
     l_clst_coef: 0.8
     l_sep_coef: 0.08
     l_aux_coef: 0
@@ -22,9 +22,9 @@ model:
 dataset:
   augmentation: true
 optim:
-  optimizer: Adam
+  optimizer: sgd
   epochs: 4
-  backbone_lr: 0.0001
+  backbone_lr: 0.002
   adapter_lr: 5e-3
   cls_lr: 1.0e-06
   aux_lr: null
@@ -33,6 +33,7 @@ optim:
     - 1
     - 2
     - 3
+  backbone_fine_tuning_epochs: [2, 3, 4]
 debug:
   epochs:
   - 0

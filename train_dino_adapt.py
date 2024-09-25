@@ -163,16 +163,16 @@ def main():
             for name, param in net.named_parameters():
                 param.requires_grad = ("backbone" not in name) and ("fg_extractor" not in name)
             
-            if (cfg.model.tuning is not None) and (cfg.model.n_splits != 0) and (epoch > 1):
+            if (cfg.model.n_splits != 0) and (epoch in cfg.optim.backbone_fine_tuning_epochs):
                 net.backbone.set_requires_grad()
                 param_groups += [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr}]
             else:
                 for param in net.backbone.parameters():
                     param.requires_grad = False
-            
-            param_groups += [{'params': net.adapters.parameters(), 'lr': cfg.optim.adapter_lr, 'weight_decay': 1e-3}] if cfg.model.adapter else []  # DEBUG
+            # TODO test weight decay for adapters
+            param_groups += [{'params': net.adapters.parameters(), 'lr': cfg.optim.adapter_lr}] if cfg.model.adapter else []
             param_groups += [{'params': net.sa, 'lr': cfg.optim.cls_lr}]
-            if cfg.optim.get("optimizer", "sgd") == "Adam":
+            if cfg.optim.get("optimizer", "sgd").lower() == "adam":
                 optimizer = optim.Adam(param_groups)
             else:
                 optimizer = optim.SGD(param_groups, momentum=0.9)
@@ -190,6 +190,7 @@ def main():
             net.initializing = False
 
         print_parameters(net=net, logger=logger)
+        logger.info(f"is_fine_tuning: {is_fine_tuning}")
         logger.info(f"net.initializing: {net.initializing}")
         logger.info(f"net.optimizing_prototypes: {net.optimizing_prototypes}")
         logger.info(f"optimizer: {type(optimizer)}")
