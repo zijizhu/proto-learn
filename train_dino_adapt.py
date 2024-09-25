@@ -188,7 +188,6 @@ def main():
 
         if (epoch > 0) or (resume_ckpt is not None):
             net.initializing = False
-        net.initializing = False
 
         print_parameters(net=net, logger=logger)
         logger.info(f"net.initializing: {net.initializing}")
