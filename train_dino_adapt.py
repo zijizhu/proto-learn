@@ -172,7 +172,7 @@ def main():
             
             param_groups += [{'params': net.adapters.parameters(), 'lr': cfg.optim.adapter_lr, 'weight_decay': 1e-3}] if cfg.model.adapter else []  # DEBUG
             param_groups += [{'params': net.sa, 'lr': cfg.optim.cls_lr}]
-            if cfg.optim.get("optimizer", "sgd") == "adam":
+            if cfg.optim.get("optimizer", "sgd") == "Adam":
                 optimizer = optim.Adam(param_groups)
             else:
                 optimizer = optim.SGD(param_groups, momentum=0.9)
@@ -192,6 +192,7 @@ def main():
         print_parameters(net=net, logger=logger)
         logger.info(f"net.initializing: {net.initializing}")
         logger.info(f"net.optimizing_prototypes: {net.optimizing_prototypes}")
+        logger.info(f"optimizer: {type(optimizer)}")
 
         train_epoch(
             model=net,
