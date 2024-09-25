@@ -2,6 +2,7 @@ from math import sqrt
 
 import torch
 import torch.nn.functional as F
+from einops.layers.torch import Rearrange
 from einops import einsum, rearrange, repeat
 from torch import nn
 from torchvision.models import resnet18, ResNet18_Weights, mobilenet_v3_small, MobileNet_V3_Small_Weights
@@ -73,7 +74,6 @@ class ProtoDINO(nn.Module):
         self.n_prototypes = n_prototypes
         self.n_classes = n_classes
         self.C = n_classes + 1
-        # self.C = n_classes
         self.backbone = backbone
 
         self.fg_extractor = fg_extractor
@@ -96,9 +96,37 @@ class ProtoDINO(nn.Module):
                 )
             ))
         elif adapter_type == "conv_bottleneck":
-            pass
+            feature_adapter = nn.Sequential(
+                Rearrange("B (H W) D -> B D H W", H=16, W=16),
+                nn.Conv2d(self.feature_dim, self.dim, kernel_size=2, stride=2),
+                nn.ReLU(),
+                nn.Conv2d(self.dim, self.dim, kernel_size=1, stride=1),
+                nn.Sigmoid(),
+                Rearrange("B D H W -> B (H W) D", H=8, W=8)
+            )
+            self.adapters = nn.ModuleDict(dict(
+                feature=feature_adapter,
+                prototype=nn.Sequential(
+                    nn.Linear(self.feature_dim, self.dim),
+                    nn.ReLU(),
+                    nn.Linear(self.dim, self.dim),
+                    nn.Sigmoid()
+                )
+            ))
         elif adapter_type == "conv":
-            pass
+            feature_adapter = nn.Sequential(
+                Rearrange("B (H W) D -> B D H W", H=16, W=16),
+                nn.Conv2d(self.feature_dim, self.dim, kernel_size=2, stride=2),
+                nn.Sigmoid(),
+                Rearrange("B D H W -> B (H W) D", H=8, W=8)
+            )
+            self.adapters = nn.ModuleDict(dict(
+                feature=feature_adapter,
+                prototype=nn.Sequential(
+                    nn.Linear(self.feature_dim, self.dim),
+                    nn.Sigmoid()
+                )
+            ))
         else:
             self.adapters = nn.ModuleDict(dict(
                 feature=nn.Sequential(
@@ -235,14 +263,13 @@ class ProtoDINO(nn.Module):
             projected_prototypes=None if self.initializing else prototype_adapted,
         )
 
-        if labels is not None:
-            if self.initializing:
-                pseudo_patch_labels = self.fg_extractor(patch_tokens_norm.detach(), labels)
-            else:
-                pseudo_patch_labels = self.get_fg_by_similarity(
-                    patch_prototype_logits=patch_prototype_logits.detach(),
-                    labels=labels
-                )
+        if (labels is not None) and self.initializing:
+            pseudo_patch_labels = self.fg_extractor(patch_tokens_norm.detach(), labels)
+
+            # pseudo_patch_labels = self.get_fg_by_similarity(
+            #     patch_prototype_logits=patch_prototype_logits.detach(),
+            #     labels=labels
+            # )
 
             part_assignment_maps, new_prototypes = self.online_clustering(
                 prototypes=self.prototypes,

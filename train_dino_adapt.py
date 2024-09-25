@@ -186,7 +186,7 @@ def main():
             optimizer = None
             net.optimizing_prototypes = True
 
-        if (epoch > 0) or (resume_ckpt is not None):
+        if (epoch > 0) or (not net.optimizing_prototypes) or (resume_ckpt is not None):
             net.initializing = False
 
         print_parameters(net=net, logger=logger)

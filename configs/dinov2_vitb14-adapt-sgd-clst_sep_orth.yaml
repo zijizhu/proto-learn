@@ -14,7 +14,7 @@ model:
     threshold: 0.5
   losses:
     l_patch_coef: 0
-    l_orth_coef: 0
+    l_orth_coef: 0.0001
     l_clst_coef: 0.8
     l_sep_coef: 0.08
     l_aux_coef: 0
@@ -33,7 +33,7 @@ optim:
     - 1
     - 2
     - 3
-  backbone_fine_tuning_epochs: [2, 3, 4]
+  backbone_fine_tuning_epochs: [2, 3]
 debug:
   epochs:
   - 0
