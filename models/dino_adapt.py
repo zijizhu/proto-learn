@@ -95,6 +95,10 @@ class ProtoDINO(nn.Module):
                     nn.Sigmoid()
                 )
             ))
+        elif adapter_type == "conv_bottleneck":
+            pass
+        elif adapter_type == "conv":
+            pass
         else:
             self.adapters = nn.ModuleDict(dict(
                 feature=nn.Sequential(
@@ -290,7 +294,7 @@ class ProtoPNetLoss(nn.Module):
         self.temperature = temperature
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: tuple[torch.Tensor, ...]):
-        logits, similarities = outputs["class_logits"], outputs["image_prototype_logits"]
+        logits, similarities = outputs["class_logits"], outputs["image_prototype_similarities"]
         projected_prototypes = outputs["projected_prototypes"]
         _, labels, _ = batch
 
