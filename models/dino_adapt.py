@@ -326,9 +326,6 @@ class ProtoPNetLoss(nn.Module):
         positives = F.one_hot(labels, num_classes=num_classes).unsqueeze(dim=-1).to(dtype=torch.float32)
         negatives = 1 - positives
 
-        print(similarities.shape)
-        print(positives.shape)
-
         cluster_cost = (similarities * positives).max(dim=-1).values.max(dim=-1).values
         separation_cost = (similarities * negatives).max(dim=-1).values.max(dim=-1).values
 
