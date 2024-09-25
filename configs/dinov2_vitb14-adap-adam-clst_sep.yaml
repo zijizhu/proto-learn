@@ -30,7 +30,6 @@ optim:
   aux_lr: null
   scheduler: null
   fine_tuning_epochs:
-    - 0
     - 1
     - 2
     - 3
