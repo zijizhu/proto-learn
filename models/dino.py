@@ -80,7 +80,7 @@ class ScoreAggregation(nn.Module):
 class ProtoDINO(nn.Module):
     def __init__(self, backbone: nn.Module, fg_extractor: nn.Module, cls_head: str,
                  *, always_norm_patches: bool = True, gamma: float = 0.999, n_prototypes: int = 5, n_classes: int = 200,
-                 temperature: float = 0.2, sa_init: float = 0.5, dim: int = 768):
+                 norm_prototypes = False, temperature: float = 0.2, sa_init: float = 0.5, dim: int = 768):
         super().__init__()
         self.gamma = gamma
         self.n_prototypes = n_prototypes
@@ -105,11 +105,12 @@ class ProtoDINO(nn.Module):
         else:
             raise NotImplementedError
 
-        self.aux_fc = nn.Linear(self.dim, self.n_classes)
+        # self.aux_fc = nn.Linear(self.dim, self.n_classes)
 
         self.optimizing_prototypes = True
         self.initializing = True
         self.always_norm_patches = always_norm_patches
+        self.norm_prototypes = norm_prototypes
 
     @staticmethod
     def online_clustering(prototypes: torch.Tensor,
@@ -189,8 +190,10 @@ class ProtoDINO(nn.Module):
         patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
         prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
 
-        if (not self.initializing) and (not self.always_norm_patches):
+        if not self.initializing:
             patch_prototype_logits = einsum(patch_tokens, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
+            patch_prototype_similarities = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
+            image_prototype_similarities = patch_prototype_similarities.max(dim=1).values
         else:
             patch_prototype_logits = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
 
@@ -199,13 +202,14 @@ class ProtoDINO(nn.Module):
         class_logits = self.classifier(image_prototype_logits[:, :-1, :])
         
         class_logits = class_logits / self.temperature
-        aux_class_logits = self.aux_fc(cls_token)
+        # aux_class_logits = self.aux_fc(cls_token)
 
         outputs = dict(
             patch_prototype_logits=patch_prototype_logits,  # shape: [B, n_patches, C, K,]
             image_prototype_logits=image_prototype_logits,  # shape: [B, C, K,]
             class_logits=class_logits,  # shape: [B, n_classes,]
-            aux_class_logits=aux_class_logits  # shape: B N_classes
+            aux_class_logits=None,  # shape: B N_classes
+            image_prototype_similarities=image_prototype_similarities  # B C K
         )
 
         if labels is not None:
@@ -232,7 +236,7 @@ class ProtoDINO(nn.Module):
             )
 
             if self.training and self.optimizing_prototypes:
-                self.prototypes = new_prototypes
+                self.prototypes = F.normalize(new_prototypes, p=2, dim=-1) if self.norm_prototypes else new_prototypes
 
             outputs.update(dict(
                 patches=patch_tokens_norm,
@@ -273,7 +277,7 @@ class ProtoPNetLoss(nn.Module):
         self.temperature = temperature
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: tuple[torch.Tensor, ...]):
-        logits, aux_logits, similarities = outputs["class_logits"], outputs["aux_class_logits"], outputs["image_prototype_logits"]
+        logits, aux_logits, similarities = outputs["class_logits"], outputs["aux_class_logits"], outputs["image_prototype_similarities"]
         patch_prototype_logits = outputs["patch_prototype_logits"]
         features, part_assignment_maps, fg_masks = outputs["patches"], outputs["part_assignment_maps"], outputs["pseudo_patch_labels"]
         _, labels, _ = batch
@@ -369,7 +373,7 @@ class ProtoPNetLoss(nn.Module):
 
     @staticmethod
     def compute_prototype_costs(similarities: torch.Tensor, labels: torch.Tensor, num_classes: int):
-        positives = F.one_hot(labels, num_classes=num_classes).to(dtype=torch.float32)
+        positives = F.one_hot(labels, num_classes=num_classes).unsqueeze(dim=-1).to(dtype=torch.float32)
         negatives = 1 - positives
 
         cluster_cost = (similarities * positives).max(dim=-1).values.max(dim=-1).values

@@ -183,8 +183,8 @@ def main():
 
             is_tuning_backbone = (cfg.model.n_splits != 0 and cfg.model.tuning is not None)
             param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr * lr_decay}] if is_tuning_backbone else []
-            param_groups += [{'params': net.aux_fc.parameters(), 'lr': cfg.optim.aux_lr * lr_decay}] if cfg.model.losses.l_aux_coef != 0 else []
-            param_groups += [{'params': net.classifier.parameters(), 'lr': cfg.optim.cls_lr * lr_decay}] if cfg.model.cls_head == "sa" else []
+            # param_groups += [{'params': net.aux_fc.parameters(), 'lr': cfg.optim.aux_lr * lr_decay}] if cfg.model.losses.l_aux_coef != 0 else []
+            param_groups += [{'params': net.classifier.parameters(), 'lr': cfg.optim.cls_lr * lr_decay}]
 
             if cfg.optim.optimizer == "SGD":
                 optimizer = optim.SGD(param_groups, momentum=0.9)
