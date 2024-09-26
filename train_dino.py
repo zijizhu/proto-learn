@@ -169,7 +169,7 @@ def main():
     best_epoch, best_val_acc = 0, 0.
     lr_coef = 1
     lr_decay = cfg.optim.get("lr_decay", 1)
-    if lr_decay <= 0:
+    if (not lr_decay) or (lr_decay <= 0):
         lr_decay = 1
 
     for epoch in range(cfg.optim.epochs):
