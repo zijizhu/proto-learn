@@ -1,15 +1,15 @@
 model:
-  name: dinov2_vitb14_reg4
+  name: dinov2_vits14_reg4
   tuning: block_expansion
   n_splits: 1
   gamma: 0.99
   n_prototypes: 5
-  temperature: 0.2
+  temperature: 0.5
   cls_head: sa
   sa_init: 0.5
   fg_extractor: "PCA"
   fg_extractor_args:
-    compare_fn: "le"
+    compare_fn: "ge"
     threshold: 0.5
   losses:
     l_patch_coef: 0
@@ -22,16 +22,22 @@ dataset:
   augmentation: true
 optim:
   optimizer: Adam
-  epochs: 3
+  epochs: 5
   backbone_lr: 0.0001
   cls_lr: 1.0e-06
   aux_lr: null
-  scheduler: null
+  lr_decay: null
+  weight_decay: 0
   fine_tuning_epochs:
     - 1
+    - 2
+    - 3
+    - 4
 debug:
   epochs:
   - 0
   - 1
   - 2
+  - 3
+  - 4
 seed: 42

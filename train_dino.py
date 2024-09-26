@@ -167,8 +167,10 @@ def main():
     writer = SummaryWriter(log_dir=log_dir.as_posix())
 
     best_epoch, best_val_acc = 0, 0.
-    lr_decay = 1
-    gamma = cfg.optim.scheduler.get("gamma", 1) if cfg.optim.scheduler else 1
+    lr_coef = 1
+    lr_decay = cfg.optim.get("lr_decay", 1)
+    if lr_decay <= 0:
+        lr_decay = 1
 
     for epoch in range(cfg.optim.epochs):
         is_fine_tuning = epoch in cfg.optim.fine_tuning_epochs
@@ -183,9 +185,11 @@ def main():
                 net.backbone.set_requires_grad()
 
             is_tuning_backbone = (cfg.model.n_splits != 0 and cfg.model.tuning is not None)
-            param_groups = [{'params': net.backbone.learnable_parameters(), 'lr': cfg.optim.backbone_lr * lr_decay}] if is_tuning_backbone else []
-            # param_groups += [{'params': net.aux_fc.parameters(), 'lr': cfg.optim.aux_lr * lr_decay}] if cfg.model.losses.l_aux_coef != 0 else []
-            param_groups += [{'params': net.classifier.parameters(), 'lr': cfg.optim.cls_lr * lr_decay}]
+            param_groups = [{'params': net.backbone.learnable_parameters(),
+                             'lr': cfg.optim.backbone_lr * lr_coef,
+                             'weight_decay': cfg.optim.weight_decay if cfg.optim.weight_decay else 0}] if is_tuning_backbone else []
+            # param_groups += [{'params': net.aux_fc.parameters(), 'lr': cfg.optim.aux_lr * lr_coef}] if cfg.model.losses.l_aux_coef != 0 else []
+            param_groups += [{'params': net.classifier.parameters(), 'lr': cfg.optim.cls_lr * lr_coef}]
 
             if cfg.optim.optimizer == "SGD":
                 optimizer = optim.SGD(param_groups, momentum=0.9)
@@ -222,7 +226,8 @@ def main():
             debug=is_debugging
         )
 
-        lr_decay *= gamma
+        if is_fine_tuning:
+            lr_coef *= lr_coef
 
         epoch_acc_val = val_epoch(model=net, dataloader=dataloader_test, epoch=epoch,
                                   writer=writer, logger=logger, device=device)

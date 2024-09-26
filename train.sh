@@ -33,13 +33,20 @@ declare -a filenames=(
 # "dinov2_vitb14-adapt-sgd-clst_sep-adapter_3_epochs"
 # "dinov2_vitb14-adapt-sgd-clst_sep"
 # "dinov2_vitb14-adapt-sgd-clst_sep_n_splits_1"
-"dinov2_vitb14-adam-clst_sep-alternate"
-"dinov2_vitb14-adam-clst_sep"
-"dinov2_vitb14-adam-clst_sep_n_splits_1"
+# "dinov2_vitb14-adam-clst_sep-alternate"
+# "dinov2_vitb14-adam-clst_sep"
+# "dinov2_vitb14-adam-clst_sep_n_splits_1"
+"dinov2_vitb14-adam-clst_sep-n_splits_1-alternate"
+"dinov2_vitb14-adam-clst_sep-n_splits_1-lr_decay_0.1"
+"dinov2_vitb14-adam-clst_sep-n_splits_1-weight_decay_1e-3"
+"dinov2_vitb14-adam-clst_sep-n_splits_1-lr_decay_0.01"
+"dinov2_vitb14-adam-n_splits_1"
+"dinov2_vits14-adam-clst_sep-n_splits_1-alternate"
+"dinov2_vits14-adam-clst_sep-n_splits_1"
 )
 
 for f in "${filenames[@]}"
 do
-  python train_dino.py --base_log_dir logs-26-09 --config_path "configs/$f.yaml"
-  python dino_eval.py --log_dir "logs-26-09/$f"
+  python train_dino.py --base_log_dir logs-27-09 --config_path "configs/$f.yaml"
+  python dino_eval.py --log_dir "logs-27-09/$f"
 done
