@@ -23,9 +23,9 @@ dataset:
   augmentation: true
 optim:
   epochs: 1
+  scheduler: null
   fine_tuning_epochs: []
 debug:
   epochs:
   - 0
 seed: 42
-  
