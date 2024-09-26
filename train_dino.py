@@ -154,7 +154,8 @@ def main():
         gamma=cfg.model.get("gamma", 0.99),
         temperature=cfg.model.temperature,
         cls_head=cfg.model.cls_head,
-        sa_init=cfg.model.sa_init
+        sa_init=cfg.model.sa_init,
+        norm_prototypes=cfg.model.get("norm_prototypes", False)
     )
     if resume_ckpt:
         state_dict = torch.load(resume_ckpt, map_location="cpu")
