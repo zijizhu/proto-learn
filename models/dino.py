@@ -209,7 +209,7 @@ class ProtoDINO(nn.Module):
             image_prototype_logits=image_prototype_logits,  # shape: [B, C, K,]
             class_logits=class_logits,  # shape: [B, n_classes,]
             aux_class_logits=None,  # shape: B N_classes
-            image_prototype_similarities=image_prototype_similarities  # B C K
+            image_prototype_similarities=None if self.initializing else image_prototype_similarities  # B C K
         )
 
         if labels is not None:
