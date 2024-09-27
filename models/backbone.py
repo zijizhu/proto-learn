@@ -11,7 +11,7 @@ from torch import nn
 # from mmpretrain import get_model
 
 from .maskclip import clip
-from .utils import block_expansion_dino
+from .utils import block_expansion_dino, append_blocks
 
 common_kwargs = dict(
     img_size=518,
@@ -73,15 +73,19 @@ class DINOv2Backbone(nn.Module):
 
 
 class DINOv2BackboneExpanded(nn.Module):
-    def __init__(self, name: str = "dinov2_vitb14_reg", n_splits: int = 0):
+    def __init__(self, name: str = "dinov2_vitb14_reg4", n_splits: int = 0, mode: str = "split", freeze_norm_layer: bool = True):
         super().__init__()
         self.dim = DIM_DICT[name]
+        assert mode in ["block_expansion", "append"]
+        expand_state_dict = block_expansion_dino if mode == "block_expansion" else append_blocks
         if n_splits > 0:
             arch = MODEL_DICT[name]
             state_dict = torch.hub.load_state_dict_from_url(URL_DICT[name], map_location="cpu")
-            expanded_state_dict, n_blocks, learnable_param_names, zero_param_names = block_expansion_dino(
+            expanded_state_dict, n_blocks, learnable_param_names, zero_param_names = expand_state_dict(
                 state_dict=state_dict,
-                n_splits=n_splits)
+                n_splits=n_splits,
+                freeze_layer_norm=freeze_norm_layer
+            )
             self.dino = arch(depth=n_blocks)
             self.dino.load_state_dict(expanded_state_dict)
             self.learnable_param_names = learnable_param_names

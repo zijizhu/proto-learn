@@ -130,7 +130,12 @@ def main():
 
     if "dino" in cfg.model.name:
         if cfg.model.n_splits and cfg.model.n_splits > 0:
-            backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
+            backbone = DINOv2BackboneExpanded(
+                name=cfg.model.name,
+                n_splits=cfg.model.n_splits,
+                mode=cfg.model.tuning,
+                freeze_norm_layer=cfg.model.get("freeze_norm", True)
+            )
         else:
             backbone = DINOv2Backbone(name=cfg.model.name)
         dim = backbone.dim

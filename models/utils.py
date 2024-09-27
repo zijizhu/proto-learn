@@ -1,6 +1,7 @@
 import math
 import re
 from abc import ABC
+from copy import deepcopy
 from functools import partial
 from logging import Logger
 
@@ -19,7 +20,7 @@ def dist_to_similarity(distances: torch.Tensor, log_activation: bool = True, eps
         return -distances
 
 
-def block_expansion_dino(state_dict: dict[str, torch.Tensor], n_splits: int = 3):
+def block_expansion_dino(state_dict: dict[str, torch.Tensor], n_splits: int = 3, freeze_layer_norm: bool = True):
     """Perform Block Expansion on a ViT described in https://arxiv.org/abs/2404.17245"""
     block_keys = set(re.search("^blocks.(\d+).", key).group(0) for key in state_dict if key.startswith("blocks."))
     n_blocks = len(block_keys)
@@ -52,9 +53,41 @@ def block_expansion_dino(state_dict: dict[str, torch.Tensor], n_splits: int = 3)
             learnable_param_names += dst_keys
 
     expanded_state_dict.update({k: v for k, v in state_dict.items() if "block" not in k})
+
+    if not freeze_layer_norm:
+        learnable_param_names += ["norm.weight", "norm.bias"]
     
     return expanded_state_dict, len(block_indices.flatten()), learnable_param_names, zero_param_names
 
+
+def append_blocks(state_dict: dict[str, torch.Tensor], n_splits: int = 1, freeze_layer_norm: bool = True):
+    """Append new ViT blocks with zero-ed MLPs and Attention Projection. Other weights initialized using last layer"""
+    block_keys = set(re.search("^blocks.(\d+).", key).group(0) for key in state_dict if key.startswith("blocks."))
+    n_blocks = len(block_keys)
+
+    src_block_idx = n_blocks - 1
+    src_keys = [k for k in state_dict if f"blocks.{src_block_idx}" in k]  # keys of parameters to copy from
+
+    expanded_state_dict = deepcopy(state_dict)
+    learnable_param_names, zero_param_names = [], []
+    for i in range(n_splits):
+        dst_block_idx = n_blocks + i
+        dst_keys = [k.replace(f"blocks.{src_block_idx}", f"blocks.{dst_block_idx}") for k in src_keys]
+
+        block_state_dict = dict()
+        for src_k, dst_k in zip(src_keys, dst_keys):
+            if "mlp.fc2" in dst_k or "attn.proj" in dst_k:
+                block_state_dict[dst_k] = torch.zeros_like(state_dict[src_k])
+                zero_param_names.append(dst_k)
+            else:
+                block_state_dict[dst_k] = state_dict[src_k]
+        expanded_state_dict.update(block_state_dict)
+        learnable_param_names += dst_keys
+    
+    if not freeze_layer_norm:
+        learnable_param_names += ["norm.weight", "norm.bias"]
+
+    return expanded_state_dict, n_blocks + n_splits, learnable_param_names, zero_param_names
 
 
 def l2_conv(x: torch.Tensor, weight: torch.Tensor, stride: int):
