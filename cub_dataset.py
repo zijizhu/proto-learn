@@ -1,6 +1,7 @@
+import pickle as pkl
+import random
 from collections import defaultdict
 from pathlib import Path
-import random
 from typing import Callable, Optional
 
 import albumentations as A
@@ -29,6 +30,36 @@ class CUBDataset(ImageFolder):
         im_path, label = self.samples[index]
         im_pt = self.transform(Image.open(im_path).convert("RGB"))
         return im_pt, label, index
+
+
+class CUBConceptDataset(ImageFolder):
+    def __init__(self,
+                 image_root: str,
+                 attribute_annotation_root: str,
+                 transforms: Optional[Callable] = None,
+                 target_transform: Optional[Callable] = None):
+        super().__init__(
+            root=image_root,
+            transform=transforms,
+            target_transform=target_transform
+        )
+
+        with open(Path(attribute_annotation_root) / "train.pkl", "rb") as fp:
+            train_attribute_anns = pkl.load(fp)
+
+        label2attr = dict()
+        for ann in train_attribute_anns:
+            label, attribute_vector = ann["class_label"], ann["attribute_label"]
+            if label not in label2attr:
+                label2attr[label] = attribute_vector
+
+        self.attributes = torch.tensor([label2attr[i] for i in range(len(label2attr))], dtype=torch.long)
+
+    def __getitem__(self, index: int):
+        im_path, label = self.samples[index]
+        im_pt = self.transform(Image.open(im_path).convert("RGB"))
+        attr = self.attributes[label]
+        return im_pt, label, attr, index
 
 
 class CUBEvalDataset(ImageFolder):
@@ -88,7 +119,6 @@ class CUBFewShotDataset(ImageFolder):
     def __init__(self,
                  root: str,
                  n_samples_per_class: int,
-                 attribute_label_path: str,
                  transforms: Optional[Callable] = None,
                  target_transform: Optional[Callable] = None):
         super().__init__(
@@ -105,10 +135,7 @@ class CUBFewShotDataset(ImageFolder):
         for label, class_sampels in label_to_paths.items():
             self.samples += [(s, label,) for s in random.sample(class_sampels, k=n_samples_per_class)]
 
-        attributes_np = np.loadtxt(attribute_label_path)
-        self.attributes = F.normalize(torch.tensor(attributes_np, dtype=torch.float32), p=2, dim=-1)
-
     def __getitem__(self, index: int):
         im_path, label = self.samples[index]
         im_pt = self.transform(Image.open(im_path).convert("RGB"))
-        return im_pt, label, self.attributes[label, :], index
+        return im_pt, label, index

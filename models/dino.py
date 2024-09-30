@@ -80,7 +80,7 @@ class ScoreAggregation(nn.Module):
 class ProtoDINO(nn.Module):
     def __init__(self, backbone: nn.Module, fg_extractor: nn.Module, cls_head: str,
                  *, always_norm_patches: bool = True, gamma: float = 0.999, n_prototypes: int = 5, n_classes: int = 200,
-                 norm_prototypes = False, temperature: float = 0.2, sa_init: float = 0.5, dim: int = 768):
+                 norm_prototypes = False, temperature: float = 0.2, sa_init: float = 0.5, dim: int = 768, n_attributes: int = 112):
         super().__init__()
         self.gamma = gamma
         self.n_prototypes = n_prototypes
@@ -95,13 +95,19 @@ class ProtoDINO(nn.Module):
         self.temperature = temperature
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
-
+        
+        self.cls_head = cls_head
         if cls_head == "fc":
             self.classifier = nn.Linear(self.n_prototypes * self.n_classes, self.n_classes, bias=False)
             prototype_class_assiciation = torch.eye(self.n_classes).repeat_interleave(self.n_prototypes, dim=0)
             self.classifier.weight = nn.Parameter((prototype_class_assiciation - 0.5 * (1 - prototype_class_assiciation)).t())
         elif cls_head == "sa":
             self.classifier = ScoreAggregation(init_val=sa_init, n_classes=n_classes, n_prototypes=n_prototypes)
+        elif cls_head == "attribute":
+            self.classifier = nn.ModuleList([
+                nn.Linear(self.n_prototypes * self.n_classes, n_attributes),
+                nn.Linear(n_attributes, n_classes)
+            ])
         else:
             raise NotImplementedError
 
@@ -199,17 +205,23 @@ class ProtoDINO(nn.Module):
 
         image_prototype_logits = patch_prototype_logits.max(1).values  # shape: [B, C, K,], C=n_classes+1
 
-        class_logits = self.classifier(image_prototype_logits[:, :-1, :])
-        
-        class_logits = class_logits / self.temperature
-        # aux_class_logits = self.aux_fc(cls_token)
+        if self.cls_head == "sa":
+            class_logits = self.classifier(image_prototype_logits[:, :-1, :])
+            class_logits = class_logits / self.temperature
+            attribute_logits = None
+        elif self.cls_head == "attribute":
+            attribute_logits = self.classifier[0](image_prototype_logits[:, :-1, :].flatten(1, -1))
+            class_logits = self.classifier[1](attribute_logits)
+        else:
+            raise NotImplementedError
 
         outputs = dict(
             patch_prototype_logits=patch_prototype_logits,  # shape: [B, n_patches, C, K,]
             image_prototype_logits=image_prototype_logits,  # shape: [B, C, K,]
             class_logits=class_logits,  # shape: [B, n_classes,]
             aux_class_logits=None,  # shape: B N_classes
-            image_prototype_similarities=None if self.initializing else image_prototype_similarities  # B C K
+            image_prototype_similarities=None if self.initializing else image_prototype_similarities,  # B C K
+            attribute_logits=attribute_logits
         )
 
         if labels is not None:
@@ -250,6 +262,7 @@ class ProtoDINO(nn.Module):
 class ProtoPNetLoss(nn.Module):
     def __init__(
             self,
+            l_attr_coef: float = 0,
             l_dense_coef: float = 0,
             l_orth_coef: float = 0,
             l_clst_coef: float = 0,
@@ -262,6 +275,7 @@ class ProtoPNetLoss(nn.Module):
             bg_class_weight: float = 0.1
         ) -> None:
         super().__init__()
+        self.l_attr_coef = l_attr_coef
         self.l_dense_coef = l_dense_coef
         self.l_orth_coef = l_orth_coef
         self.l_clst_coef = l_clst_coef
@@ -270,6 +284,7 @@ class ProtoPNetLoss(nn.Module):
         self.l_aux_coef = l_aux_coef
         self.xe = nn.CrossEntropyLoss()
         self.xe_aux = nn.CrossEntropyLoss()
+        self.bce = nn.BCEWithLogitsLoss()
 
         self.C = num_classes
         self.K = n_prototypes
@@ -280,7 +295,8 @@ class ProtoPNetLoss(nn.Module):
         logits, aux_logits, similarities = outputs["class_logits"], outputs["aux_class_logits"], outputs["image_prototype_similarities"]
         patch_prototype_logits = outputs["patch_prototype_logits"]
         features, part_assignment_maps, fg_masks = outputs["patches"], outputs["part_assignment_maps"], outputs["pseudo_patch_labels"]
-        _, labels, _ = batch
+        attribute_logits = outputs["attribute_logits"]
+        _, labels, attributes, _ = batch
 
         loss_dict = dict()
         loss_dict["l_y"] = self.xe(logits, labels)
@@ -320,6 +336,13 @@ class ProtoPNetLoss(nn.Module):
             loss_dict["l_orth"] = self.l_orth_coef * l_orth
             loss_dict["_l_orth_raw"] = l_orth
 
+        if self.l_attr_coef != 0:
+            assert attribute_logits is not None
+            print(attribute_logits.dtype, attributes.dtype)
+            l_attribute = self.bce(attribute_logits, attributes.to(torch.float32))
+            loss_dict["l_attr"] = self.l_attr_coef * l_attribute
+            loss_dict["_l_attr_raw"] = l_attribute
+
         if self.l_clst_coef != 0 and self.l_sep_coef != 0:
             l_clst, l_sep = self.compute_prototype_costs(similarities, labels, num_classes=self.C + 1)
             loss_dict["l_clst"] = -(self.l_clst_coef * l_clst)
@@ -342,7 +365,7 @@ class ProtoPNetLoss(nn.Module):
     def compute_dense_loss(patch_prototype_logits: torch.Tensor,
                            patch_prototype_assignments: torch.Tensor,
                            labels: torch.Tensor):
-        """patch_prototype_assignments: B (H W)"""
+        """Supervise patch-level logits with assignment map"""
         B, N, C, K = patch_prototype_logits.shape
         H = W = int(sqrt(N))
         target_class_patch_prototype_logits = patch_prototype_logits[torch.arange(B), :, labels, :]  # shape: B N K
