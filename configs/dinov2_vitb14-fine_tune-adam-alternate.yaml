@@ -1,6 +1,7 @@
 model:
   name: dinov2_vitb14_reg4
   tuning: block_expansion
+  freeze_norm: true
   n_splits: 3
   gamma: 0.99
   n_prototypes: 5
@@ -21,15 +22,15 @@ model:
 dataset:
   augmentation: true
 optim:
-  optimizer: SGD
+  optimizer: Adam
   epochs: 4
-  backbone_lr: 0.005
+  backbone_lr: 0.0001
   cls_lr: 1.0e-06
   aux_lr: null
-  scheduler: null
+  lr_decay: null
+  weight_decay: 0
   fine_tuning_epochs:
     - 1
-    - 2
     - 3
 debug:
   epochs:

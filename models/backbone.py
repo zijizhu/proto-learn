@@ -73,7 +73,7 @@ class DINOv2Backbone(nn.Module):
 
 
 class DINOv2BackboneExpanded(nn.Module):
-    def __init__(self, name: str = "dinov2_vitb14_reg4", n_splits: int = 0, mode: str = "split", freeze_norm_layer: bool = True):
+    def __init__(self, name: str = "dinov2_vitb14_reg4", n_splits: int = 0, mode: str = "block_expansion", freeze_norm_layer: bool = True):
         super().__init__()
         self.dim = DIM_DICT[name]
         assert mode in ["block_expansion", "append"]

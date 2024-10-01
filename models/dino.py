@@ -296,7 +296,10 @@ class ProtoPNetLoss(nn.Module):
         patch_prototype_logits = outputs["patch_prototype_logits"]
         features, part_assignment_maps, fg_masks = outputs["patches"], outputs["part_assignment_maps"], outputs["pseudo_patch_labels"]
         attribute_logits = outputs["attribute_logits"]
-        _, labels, attributes, _ = batch
+        if self.l_attr_coef > 0:
+            _, labels, attributes, _ = batch
+        else:
+            _, labels, _ = batch
 
         loss_dict = dict()
         loss_dict["l_y"] = self.xe(logits, labels)
@@ -338,7 +341,6 @@ class ProtoPNetLoss(nn.Module):
 
         if self.l_attr_coef != 0:
             assert attribute_logits is not None
-            print(attribute_logits.dtype, attributes.dtype)
             l_attribute = self.bce(attribute_logits, attributes.to(torch.float32))
             loss_dict["l_attr"] = self.l_attr_coef * l_attribute
             loss_dict["_l_attr_raw"] = l_attribute
