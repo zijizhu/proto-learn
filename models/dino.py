@@ -197,7 +197,8 @@ class ProtoDINO(nn.Module):
         prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
 
         if not self.initializing:
-            patch_prototype_logits = einsum(patch_tokens, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
+            # patch_prototype_logits = einsum(patch_tokens, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
+            patch_prototype_logits = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
             patch_prototype_similarities = einsum(patch_tokens_norm, prototype_norm, "B n_patches dim, C K dim -> B n_patches C K")
             image_prototype_similarities = patch_prototype_similarities.max(dim=1).values
         else:
