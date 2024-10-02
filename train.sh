@@ -56,7 +56,7 @@ declare -a filenames=(
 # "dinov2_vitb14-fine_tune-adam-alternate"
 # "dinov2_vitb14-fine_tune-adam-train_norm"
 # "dinov2_vitb14-fine_tune-adam"
-"dinov2_vitb14-fine_tune-adam"
+"dinov2_vitb14-fine_tune-adam-alternate"
 )
 
 for f in "${filenames[@]}"
