@@ -24,7 +24,7 @@ dataset:
 optim:
   optimizer: Adam
   epochs: 4
-  backbone_lr: 0.001
+  backbone_lr: 0.0001
   cls_lr: 1.0e-06
   aux_lr: null
   lr_decay: null
