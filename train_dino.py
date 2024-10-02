@@ -202,7 +202,6 @@ def main():
             param_groups = [{'params': net.backbone.learnable_parameters(),
                              'lr': cfg.optim.backbone_lr * lr_coef,
                              'weight_decay': cfg.optim.weight_decay if cfg.optim.get("weight_decay", False) else 0}] if is_tuning_backbone else []
-            # param_groups += [{'params': net.aux_fc.parameters(), 'lr': cfg.optim.aux_lr * lr_coef}] if cfg.model.losses.l_aux_coef != 0 else []
             param_groups += [{'params': net.classifier.parameters(), 'lr': cfg.optim.cls_lr * lr_coef}]
 
             if cfg.optim.optimizer == "SGD":
@@ -226,7 +225,7 @@ def main():
         print_parameters(net=net, logger=logger)
         logger.info(f"net.initializing: {net.initializing}")
         logger.info(f"net.optimizing_prototypes: {net.optimizing_prototypes}")
-        logger.info(f"lr_decay: {lr_decay}")
+        logger.info(f"lr_coef: {lr_coef}")
 
         train_epoch(
             model=net,

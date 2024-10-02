@@ -53,8 +53,9 @@ declare -a filenames=(
 # "dinov2_vitb14-adam-clst_sep-n_splits_1-append-train_norm-always_optim"
 # "dinov2_vitb14-adam-clst_sep-n_splits_3-append-train_norm-alternate"
 # "dinov2_vitb14-adam-clst_sep-n_splits_3-append-train_norm-always_optim"
-"dinov2_vitb14-fine_tune-adam-alternate"
-"dinov2_vitb14-fine_tune-adam-train_norm"
+# "dinov2_vitb14-fine_tune-adam-alternate"
+# "dinov2_vitb14-fine_tune-adam-train_norm"
+# "dinov2_vitb14-fine_tune-adam"
 "dinov2_vitb14-fine_tune-adam"
 )
 
