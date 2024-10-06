@@ -243,7 +243,7 @@ def main():
         fg_extractor = PaPr(bg_class=n_classes, **cfg.model.fg_extractor_args)
     else:
         fg_extractor = PCA(bg_class=n_classes, **cfg.model.fg_extractor_args)
-
+    n_attributes = 112
     net = ProtoDINO(
         backbone=backbone,
         dim=dim,
@@ -251,8 +251,10 @@ def main():
         n_prototypes=cfg.model.n_prototypes,
         gamma=cfg.model.get("gamma", 0.99),
         temperature=cfg.model.temperature,
-        cls_head=cfg.model.cls_head,
-        sa_init=cfg.model.sa_init
+        cls_head="attribute" if cfg.get("concept_learning", False) else cfg.model.cls_head,
+        sa_init=cfg.model.sa_init,
+        n_attributes=n_attributes,
+        norm_prototypes=cfg.model.get("norm_prototypes", False)
     )
     state_dict = torch.load(log_dir / "dino_v2_proto.pth", map_location="cpu")
     net.load_state_dict(state_dict=state_dict, strict=False)
