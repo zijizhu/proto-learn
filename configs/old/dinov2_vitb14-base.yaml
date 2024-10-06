@@ -7,9 +7,9 @@ model:
   temperature: 0.2
   cls_head: sa
   sa_init: 0.5
-  fg_extractor: PCA
+  fg_extractor: "PCA"
   fg_extractor_args:
-    compare_fn: le
+    compare_fn: "le"
     threshold: 0.5
   losses:
     l_patch_coef: 0
@@ -21,14 +21,8 @@ model:
 dataset:
   augmentation: true
 optim:
-  optimizer: null
   epochs: 1
-  backbone_lr: 0
-  cls_lr: 0
-  aux_lr: null
-  scheduler: null
-  fine_tuning_epochs:
-  - 1
+  fine_tuning_epochs: []
 debug:
   epochs:
   - 0

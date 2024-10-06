@@ -21,15 +21,22 @@ model:
 dataset:
   augmentation: true
 optim:
-  optimizer: null
-  epochs: 1
-  backbone_lr: 0
-  cls_lr: 0
+  optimizer: Adam
+  epochs: 5
+  backbone_lr: 0.0001
+  cls_lr: 1.0e-06
   aux_lr: null
   scheduler: null
   fine_tuning_epochs:
   - 1
+  - 2
+  - 3
+  - 4
 debug:
   epochs:
   - 0
+  - 1
+  - 2
+  - 3
+  - 4
 seed: 42
