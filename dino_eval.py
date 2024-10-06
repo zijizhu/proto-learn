@@ -7,17 +7,23 @@ from pathlib import Path
 import lightning as L
 import torch
 import torch.nn.functional as F
+import torchvision.transforms as T
 from einops import rearrange, repeat
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, SequentialSampler
 from torch.utils.tensorboard.writer import SummaryWriter
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
 from cub_dataset import CUBEvalDataset
+from eval.concept_trustworthiness import (
+    Cub2011Eval,
+    evaluate_concept_trustworthiness,
+    get_activation_maps,
+)
 from eval.consistency import evaluate_consistency
-from models.backbone import DINOv2BackboneExpanded, MaskCLIP, DINOv2Backbone
+from models.backbone import DINOv2Backbone, DINOv2BackboneExpanded, MaskCLIP
 from models.dino import PCA, PaPr, ProtoDINO
 from utils.config import load_config_and_logging
 from utils.visualization import (
@@ -257,15 +263,15 @@ def main():
     net.eval()
     net.to(device)
     
-    writer = SummaryWriter(log_dir=log_dir)
+    # writer = SummaryWriter(log_dir=log_dir)
 
-    logger.info("Evaluating accuracy...")
-    eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
+    # logger.info("Evaluating accuracy...")
+    # eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
     
-    logger.info("Evaluating class-wise NMI and ARI...")
-    mean_nmi, mean_ari = eval_nmi_ari(net=net, dataloader=dataloader_eval, device=device)
-    logger.info(f"Mean class-wise NMI: {float(mean_nmi)}")
-    logger.info(f"Mean class-wise ARI: {float(mean_ari)}")
+    # logger.info("Evaluating class-wise NMI and ARI...")
+    # mean_nmi, mean_ari = eval_nmi_ari(net=net, dataloader=dataloader_eval, device=device)
+    # logger.info(f"Mean class-wise NMI: {float(mean_nmi)}")
+    # logger.info(f"Mean class-wise ARI: {float(mean_ari)}")
 
     # Monkey-patch the model class to make it compatible with eval script
     ProtoDINO.push_forward = push_forward
@@ -276,11 +282,30 @@ def main():
     args.test_batch_size = 64
     args.nb_classes = 200
 
-    logger.info("Evaluating consistency...")
-    consistency_score = evaluate_consistency(net, args, save_dir=log_dir)
-    logger.info(f"Network consistency score: {consistency_score.item()}")
+    # logger.info("Evaluating consistency...")
+    # consistency_score = evaluate_consistency(net, args, save_dir=log_dir)
+    # logger.info(f"Network consistency score: {consistency_score.item()}")
+
+    if cfg.get("concept_learning", False):
+        logger.info("Evaluating concept trustworthiness...")
+        normalize = T.Normalize(mean=(0.485, 0.456, 0.406,), std=(0.229, 0.224, 0.225,))
+
+        transform = T.Compose([
+            T.Resize(size=(224, 224)),
+            T.ToTensor(),
+            normalize,
+            ])
+        concept_loc_dataset_eval = Cub2011Eval(root='datasets/', train=False, transform=transform)
+        concept_loc_dataloader_eval = DataLoader(concept_loc_dataset_eval, shuffle=False, batch_size=150)
+        net.attributes_predictor = net.classifier[0]
+
+        all_activation_maps, all_img_ids = get_activation_maps(net, concept_loc_dataloader_eval)
+        mean_loc_acc, (all_loc_acc, all_attri_idx, all_num_samples) = evaluate_concept_trustworthiness(all_activation_maps, all_img_ids, bbox_half_size=45)
+        logger.info(f"Concept trustworthiness score of the network on the {len(concept_loc_dataset_eval)} test images: {mean_loc_acc:.2f}%")
+    if cfg.get("part_segmentation", False):
+        logger.info("Evaluating part segmentation...")
+        raise NotImplementedError
 
 
 if __name__ == "__main__":
     main()
-    

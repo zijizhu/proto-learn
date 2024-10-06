@@ -166,7 +166,7 @@ class ProtoDINO(nn.Module):
 
             P_new[c, ...] = momentum_update(P_c_old, P_c_new, momentum=gamma)
 
-            part_assignment_maps[class_fg_mask] = L_c_assignment_indices
+            part_assignment_maps[class_fg_mask] = L_c_assignment_indices + c
 
             L_c_dict[c] = L_c_assignment
 
