@@ -166,7 +166,7 @@ class ProtoDINO(nn.Module):
 
             P_new[c, ...] = momentum_update(P_c_old, P_c_new, momentum=gamma)
 
-            part_assignment_maps[class_fg_mask] = L_c_assignment_indices + c
+            part_assignment_maps[class_fg_mask] = L_c_assignment_indices + c * K
 
             L_c_dict[c] = L_c_assignment
 
@@ -222,6 +222,7 @@ class ProtoDINO(nn.Module):
             class_logits=class_logits,  # shape: [B, n_classes,]
             aux_class_logits=None,  # shape: B N_classes
             image_prototype_similarities=None if self.initializing else image_prototype_similarities,  # B C K
+            patch_prototype_similarities= None if self.initializing else patch_prototype_similarities,
             attribute_logits=attribute_logits
         )
 
@@ -253,8 +254,8 @@ class ProtoDINO(nn.Module):
 
             outputs.update(dict(
                 patches=patch_tokens_norm,
-                part_assignment_maps=part_assignment_maps,
-                pseudo_patch_labels=pseudo_patch_labels
+                part_assignment_maps=part_assignment_maps,  # B n_patches
+                pseudo_patch_labels=pseudo_patch_labels  # B H W
             ))
 
         return outputs
@@ -263,26 +264,41 @@ class ProtoDINO(nn.Module):
 class ProtoPNetLoss(nn.Module):
     def __init__(
             self,
+            l_ent_coef: float= 0,
+            l_patch_coef: float = 0,
+            l_patch_clst_coef: float = 0,
+            l_patch_sep_coef: float = 0,
+            use_similarities: bool = False,
+
             l_attr_coef: float = 0,
+
+            # deprecated
             l_dense_coef: float = 0,
             l_orth_coef: float = 0,
             l_clst_coef: float = 0,
-            l_patch_coef: float = 0,
             l_sep_coef: float = 0,
             l_aux_coef: float = 0,
+
             num_classes: int = 200,
             n_prototypes: int = 5,
             temperature: float = 0.1,
             bg_class_weight: float = 0.1
         ) -> None:
         super().__init__()
+        self.l_ent_coef = l_ent_coef
+        self.l_patch_coef = l_patch_coef
+        self.l_patch_clst_coef = l_patch_clst_coef
+        self.l_patch_sep_coef = l_patch_sep_coef
+        self.use_similarities = use_similarities
+
         self.l_attr_coef = l_attr_coef
+
         self.l_dense_coef = l_dense_coef
         self.l_orth_coef = l_orth_coef
         self.l_clst_coef = l_clst_coef
-        self.l_patch_coef = l_patch_coef
         self.l_sep_coef = l_sep_coef
         self.l_aux_coef = l_aux_coef
+
         self.xe = nn.CrossEntropyLoss()
         self.xe_aux = nn.CrossEntropyLoss()
         self.bce = nn.BCEWithLogitsLoss()
@@ -294,9 +310,13 @@ class ProtoPNetLoss(nn.Module):
 
     def forward(self, outputs: dict[str, torch.Tensor], batch: tuple[torch.Tensor, ...]):
         logits, aux_logits, similarities = outputs["class_logits"], outputs["aux_class_logits"], outputs["image_prototype_similarities"]
-        patch_prototype_logits = outputs["patch_prototype_logits"]
+        patch_prototype_logits, patch_prototype_similarities = outputs["patch_prototype_logits"], outputs["patch_prototype_similarities"]
         features, part_assignment_maps, fg_masks = outputs["patches"], outputs["part_assignment_maps"], outputs["pseudo_patch_labels"]
         attribute_logits = outputs["attribute_logits"]
+
+        if fg_masks is not None:
+            foreground_masks = (fg_masks != self.C).to(dtype=torch.bool)
+
         if self.l_attr_coef > 0:
             _, labels, attributes, _ = batch
         else:
@@ -304,6 +324,28 @@ class ProtoPNetLoss(nn.Module):
 
         loss_dict = dict()
         loss_dict["l_y"] = self.xe(logits, labels)
+
+        if self.l_ent_coef != 0:
+            l_ent = self.compute_entropic_regularization(
+                patch_prototype_logits=patch_prototype_logits if self.use_similarities else patch_prototype_similarities,
+                labels=labels,
+                foregrond_mask=foreground_masks
+            )
+            loss_dict["l_ent"] = self.l_ent_coef * l_ent
+            loss_dict["_l_ent_raw"] = l_ent
+
+        if self.l_patch_coef != 0:
+            l_patch = self.compute_patch_xe_loss(
+                patch_prototype_logits=patch_prototype_logits if self.use_similarities else patch_prototype_similarities,
+                labels=labels,
+                foreground_mask=foreground_masks,
+                part_assignment_maps=part_assignment_maps
+            )
+            loss_dict["l_patch"] = self.l_patch_coef * l_patch
+            loss_dict["_l_patch_raw"] = l_patch
+
+        if self.l_patch_clst_coef != 0 and self.l_patch_sep_coef != 0:
+            pass
 
         if self.l_dense_coef != 0:
             l_dense = self.compute_dense_loss(
@@ -354,15 +396,55 @@ class ProtoPNetLoss(nn.Module):
             loss_dict["_l_sep_raw"] = l_sep
 
         return loss_dict
+    
+    @staticmethod
+    def compute_entropic_regularization(patch_prototype_logits: torch.Tensor, labels: torch.Tensor, foregrond_mask: torch.Tensor):
+        B, N, C, K = patch_prototype_logits.shape
+        foregrond_mask = foregrond_mask.flatten()
+        x = patch_prototype_logits[torch.arange(B), :, labels, :]  # shape: B N K
+        x = rearrange(x, "B N K -> (B N) K")
+        x = x[foregrond_mask, :]
+
+        b = F.softmax(x, dim=-1) * F.log_softmax(x, dim=-1)
+        b = -1.0 * b.sum(dim=-1)
+
+        return torch.mean(b)
 
     @staticmethod
-    def compute_patch_contrastive_cost(patch_prototype_logits: torch.Tensor,
-                                       patch_prototype_assignments: torch.Tensor,
-                                       class_weight: torch.Tensor,
-                                       temperature: float = 0.1):
-        patch_prototype_logits = rearrange(patch_prototype_logits, "B N C K -> B (C K) N") / temperature
-        loss = F.cross_entropy(patch_prototype_logits, target=patch_prototype_assignments, weight=class_weight)
-        return loss
+    def compute_patch_xe_loss(patch_prototype_logits: torch.Tensor,
+                              labels: torch.Tensor,
+                              foreground_mask: torch.Tensor,
+                              part_assignment_maps: torch.Tensor):
+        foreground_mask = foreground_mask.flatten()
+        B, N, C, K = patch_prototype_logits.shape
+        target_class_patch_prototype_logits = patch_prototype_logits[torch.arange(B), :, labels, :]  # shape: B N K
+        target_class_patch_prototype_logits = rearrange(target_class_patch_prototype_logits, "B N K -> (B N) K")  # B*N K
+
+        assignment = torch.remainder(part_assignment_maps, K).flatten()
+        x = target_class_patch_prototype_logits[foreground_mask]
+        y = assignment[foreground_mask]
+
+        return F.cross_entropy(x, y)
+
+    @staticmethod
+    def compute_patch_clst_sep_loss(patch_prototype_logits: torch.Tensor,
+                                    labels: torch.Tensor,
+                                    foreground_mask: torch.Tensor,
+                                    part_assignment_maps: torch.Tensor):
+        B, N, C, K = patch_prototype_logits.shape
+        target_class_patch_prototype_logits = patch_prototype_logits[torch.arange(B), :, labels, :]  # shape: B N K
+        target_class_patch_prototype_logits = rearrange(target_class_patch_prototype_logits, "B N K -> (B N) K")  # B*N K
+
+        assignment = torch.remainder(part_assignment_maps, K)
+        x = target_class_patch_prototype_logits[foreground_mask]
+        
+        positives = F.one_hot(assignment[foreground_mask], num_classes=K)
+        negatives = 1 - positives
+
+        cluster_cost = (x * positives).max(dim=-1).values
+        separation_cost = (x * negatives).max(dim=-1).values
+
+        return torch.mean(cluster_cost), torch.mean(separation_cost)
 
     @staticmethod
     def compute_dense_loss(patch_prototype_logits: torch.Tensor,
@@ -406,3 +488,12 @@ class ProtoPNetLoss(nn.Module):
         separation_cost = (similarities * negatives).max(dim=-1).values.max(dim=-1).values
 
         return torch.mean(cluster_cost), torch.mean(separation_cost)
+
+    @staticmethod
+    def compute_patch_contrastive_cost(patch_prototype_logits: torch.Tensor,
+                                       patch_prototype_assignments: torch.Tensor,
+                                       class_weight: torch.Tensor,
+                                       temperature: float = 0.1):
+        patch_prototype_logits = rearrange(patch_prototype_logits, "B N C K -> B (C K) N") / temperature
+        loss = F.cross_entropy(patch_prototype_logits, target=patch_prototype_assignments, weight=class_weight)
+        return loss
