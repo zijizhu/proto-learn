@@ -99,6 +99,20 @@ class DINOv2BackboneExpanded(nn.Module):
     def set_requires_grad(self):
         for name, param in self.dino.named_parameters():
             param.requires_grad = name in self.learnable_param_names
+    
+    def forward_with_original_feature(self, x):
+        x = self.dino.prepare_tokens_with_masks(x, masks=None)
+
+        original_feature = None
+        for b, blk in enumerate(self.dino.blocks):
+            x = blk(x)
+
+            if b == 11:
+                original_feature = self.dino.norm(x)
+                original_feature =original_feature[:, self.dino.num_register_tokens + 1:, :]
+
+        x_norm = self.dino.norm(x)
+        return x_norm[:, self.dino.num_register_tokens + 1:, :], original_feature
 
     def forward(self,
                 x: torch.Tensor,

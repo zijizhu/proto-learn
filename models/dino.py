@@ -191,7 +191,7 @@ class ProtoDINO(nn.Module):
                 *, use_gumbel: bool = False):
         assert (not self.training) or (labels is not None)
 
-        patch_tokens, cls_token = self.backbone(x)  # shape: [B, n_pathes, dim,]
+        patch_tokens, original_patch_tokens = self.backbone.forward_with_original_feature(x)  # shape: [B, n_pathes, dim,]
 
         patch_tokens_norm = F.normalize(patch_tokens, p=2, dim=-1)
         prototype_norm = F.normalize(self.prototypes, p=2, dim=-1)
@@ -227,16 +227,18 @@ class ProtoDINO(nn.Module):
         )
 
         if labels is not None:
-            if self.initializing:
-                if isinstance(self.fg_extractor, PaPr):
-                    pseudo_patch_labels = self.fg_extractor(x, labels)
-                else:
-                    pseudo_patch_labels = self.fg_extractor(patch_tokens_norm.detach(), labels)
-            else:
-                pseudo_patch_labels = self.get_fg_by_similarity(
-                    patch_prototype_logits=patch_prototype_logits.detach(),
-                    labels=labels
-                )
+            # if self.initializing:
+            #     if isinstance(self.fg_extractor, PaPr):
+            #         pseudo_patch_labels = self.fg_extractor(x, labels)
+            #     else:
+            #         pseudo_patch_labels = self.fg_extractor(patch_tokens_norm.detach(), labels)
+            # else:
+            #     pseudo_patch_labels = self.get_fg_by_similarity(
+            #         patch_prototype_logits=patch_prototype_logits.detach(),
+            #         labels=labels
+            #     )
+            original_patch_tokens_norm = F.normalize(original_patch_tokens, p=2, dim=-1)
+            pseudo_patch_labels = self.fg_extractor(original_patch_tokens_norm.detach(), labels)
             pseudo_patch_labels = pseudo_patch_labels.detach()
 
             part_assignment_maps, new_prototypes = self.online_clustering(
@@ -327,7 +329,7 @@ class ProtoPNetLoss(nn.Module):
 
         if self.l_ent_coef != 0:
             l_ent = self.compute_entropic_regularization(
-                patch_prototype_logits=patch_prototype_logits if self.use_similarities else patch_prototype_similarities,
+                patch_prototype_logits=patch_prototype_similarities if self.use_similarities else patch_prototype_logits,
                 labels=labels,
                 foregrond_mask=foreground_masks
             )
@@ -336,7 +338,7 @@ class ProtoPNetLoss(nn.Module):
 
         if self.l_patch_coef != 0:
             l_patch = self.compute_patch_xe_loss(
-                patch_prototype_logits=patch_prototype_logits if self.use_similarities else patch_prototype_similarities,
+                patch_prototype_logits=patch_prototype_similarities if self.use_similarities else patch_prototype_logits,
                 labels=labels,
                 foreground_mask=foreground_masks,
                 part_assignment_maps=part_assignment_maps
@@ -345,7 +347,16 @@ class ProtoPNetLoss(nn.Module):
             loss_dict["_l_patch_raw"] = l_patch
 
         if self.l_patch_clst_coef != 0 and self.l_patch_sep_coef != 0:
-            pass
+            l_patch_clst, l_patch_sep = self.compute_patch_clst_sep_loss(
+                patch_prototype_logits=patch_prototype_similarities if self.use_similarities else patch_prototype_logits,
+                labels=labels,
+                foreground_mask=foreground_masks,
+                part_assignment_maps=part_assignment_maps
+            )
+            loss_dict["l_patch_clst"] = -(self.l_patch_clst_coef * l_patch_clst)
+            loss_dict["l_patch_sep"] = self.l_patch_sep_coef * l_patch_sep
+            loss_dict["_l_patch_clst_raw"] = l_patch_clst
+            loss_dict["_l_patch_sep_raw"] = l_patch_sep
 
         if self.l_dense_coef != 0:
             l_dense = self.compute_dense_loss(
@@ -432,12 +443,12 @@ class ProtoPNetLoss(nn.Module):
                                     foreground_mask: torch.Tensor,
                                     part_assignment_maps: torch.Tensor):
         B, N, C, K = patch_prototype_logits.shape
+        
         target_class_patch_prototype_logits = patch_prototype_logits[torch.arange(B), :, labels, :]  # shape: B N K
         target_class_patch_prototype_logits = rearrange(target_class_patch_prototype_logits, "B N K -> (B N) K")  # B*N K
 
         assignment = torch.remainder(part_assignment_maps, K)
-        x = target_class_patch_prototype_logits[foreground_mask]
-        
+        x = target_class_patch_prototype_logits[foreground_mask.flatten()]
         positives = F.one_hot(assignment[foreground_mask], num_classes=K)
         negatives = 1 - positives
 

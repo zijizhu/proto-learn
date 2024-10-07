@@ -248,8 +248,12 @@ def main():
         if epoch_acc_val > best_val_acc:
             best_val_acc = epoch_acc_val
             best_epoch = epoch
-            torch.save({k: v.cpu() for k, v in net.state_dict().items()}, log_dir / "dino_v2_proto.pth")
+            torch.save({k: v.cpu() for k, v in net.state_dict().items()}, log_dir / "dino_v2_proto_best.pth")
             logger.info("Best epoch found, model saved!")
+        
+        if epoch == (cfg.optim.epochs - 1):
+            torch.save({k: v.cpu() for k, v in net.state_dict().items()}, log_dir / "dino_v2_proto_last_epoch.pth")
+            logger.info("Last epoch, model saved!")
 
     logger.info(f"DONE! Best epoch is epoch {best_epoch} with accuracy {best_val_acc}.")
 
