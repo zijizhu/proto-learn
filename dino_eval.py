@@ -187,8 +187,7 @@ def eval_accuracy(model: nn.Module, dataloader: DataLoader, writer: SummaryWrite
 
     for i, batch in enumerate(tqdm(dataloader)):
         batch = tuple(item.to(device) for item in batch)
-        images, labels  = batch[:2]
-        sample_indices = batch[-1]
+        images, kp, labels, _, sample_indices = batch
 
         outputs = model(images, labels=labels)
 
