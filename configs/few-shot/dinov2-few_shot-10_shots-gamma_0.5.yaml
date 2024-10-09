@@ -22,7 +22,7 @@ dataset:
   augmentation: true
 optim:
   optimizer: null
-  epochs: 1
+  epochs: 5
   backbone_lr: 0
   cls_lr: 0
   aux_lr: null
