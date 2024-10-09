@@ -16,7 +16,7 @@ from tqdm import tqdm
 from models.dino import ProtoDINO, ProtoPNetLoss, PaPr, PCA
 from models.backbone import DINOv2BackboneExpanded, MaskCLIP, DINOv2Backbone
 from cub_dataset import CUBDataset, CUBFewShotDataset, CUBConceptDataset
-from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes
+from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes, visualize_gt_class_prototypes
 from utils.config import setup_config_and_logging
 from models.utils import print_parameters
 
@@ -48,11 +48,12 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
 
         mca_train(outputs["class_logits"], labels)
 
-        if debug and i == 0:
+        if debug and i == len(dataloader) - 1:
             batch_size, _, input_size, input_size = images.shape
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
-            visualize_topk_prototypes(outputs, batch_im_paths, writer, step=epoch, input_size=input_size,
-                                      tag_fmt_str="Training first batch top{topk} prototypes/epoch {step}/{idx}")
+            # visualize_topk_prototypes(outputs, batch_im_paths, writer, step=epoch, input_size=input_size,
+            #                           tag_fmt_str="Training first batch top{topk} prototypes/epoch {step}/{idx}")
+            visualize_gt_class_prototypes(outputs, batch_im_paths, labels, writer, tag=f"Ground True Prototypes Train Epoch{epoch}", use_pooling=True)
             visualize_prototype_assignments(outputs, writer, step=epoch,
                                             tag=f"Training first batch prototype assignments/epoch {epoch}")
 
@@ -81,11 +82,12 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
 
         mca_val(outputs["class_logits"], labels)
 
-        if debug and i == 0:
+        if debug and i == len(dataloader) - 1:
             batch_size, input_size, input_size = images.shape
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
-            visualize_topk_prototypes(outputs, batch_im_paths, writer, step=epoch, input_size=input_size,
-                                      tag_fmt_str="Training epoch {step} batch 0 top{topk} prototypes/{idx}")
+            # visualize_topk_prototypes(outputs, batch_im_paths, writer, step=epoch, input_size=input_size,
+            #                           tag_fmt_str="Validation epoch {step} batch 0 top{topk} prototypes/{idx}")
+            visualize_gt_class_prototypes(outputs, batch_im_paths, labels, writer, tag=f"Ground True Prototypes Val Epoch{epoch}", use_pooling=True)
             visualize_prototype_assignments(outputs, labels, writer, step=epoch,
                                             tag=f"Validation epoch {epoch} batch {i} prototype assignments")
 
@@ -117,23 +119,24 @@ def main():
     attribute_annotation_root = Path("datasets") / "class_attr_data_10"
     training_set_path = "train_cropped_augmented" if cfg.dataset.augmentation else "train_cropped"
 
-    dataset_train = CUBDataset((dataset_dir / training_set_path).as_posix(),
-                               transforms=transforms)
-    dataset_train_few_shot = CUBFewShotDataset((dataset_dir / training_set_path).as_posix(),
-                                               n_samples_per_class=10,
-                                               transforms=transforms)
-    dataset_train_concept = CUBConceptDataset((dataset_dir / training_set_path).as_posix(),
-                                              attribute_annotation_root=attribute_annotation_root,
-                                              transforms=transforms)
-    dataset_test = CUBDataset((dataset_dir / "test_cropped").as_posix(),
-                              transforms=transforms)
     if cfg.get("few_shot", False):
+        dataset_train_few_shot = CUBFewShotDataset((dataset_dir / "train_cropped").as_posix(),
+                                                   n_samples_per_class=cfg.few_shot.get("n_samples", 10),
+                                                   transforms=transforms)
         dataloader_train = DataLoader(dataset=dataset_train_few_shot, batch_size=128, num_workers=8, shuffle=True)
     elif cfg.get("concept_learning", False):
         assert cfg.model.losses.l_attr_coef > 0
+        dataset_train_concept = CUBConceptDataset((dataset_dir / training_set_path).as_posix(),
+                                                  attribute_annotation_root=attribute_annotation_root,
+                                                  transforms=transforms)
         dataloader_train = DataLoader(dataset=dataset_train_concept, batch_size=128, num_workers=8, shuffle=True)
     else:
+        dataset_train = CUBDataset((dataset_dir / training_set_path).as_posix(),
+                                   transforms=transforms)
         dataloader_train = DataLoader(dataset=dataset_train, batch_size=128, num_workers=8, shuffle=True)
+    
+    dataset_test = CUBDataset((dataset_dir / "test_cropped").as_posix(),
+                              transforms=transforms)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=8, shuffle=True)
 
     if "dino" in cfg.model.name:
@@ -250,8 +253,7 @@ def main():
             best_epoch = epoch
             torch.save({k: v.cpu() for k, v in net.state_dict().items()}, log_dir / "dino_v2_proto_best.pth")
             logger.info("Best epoch found, model saved!")
-        
-        if epoch == (cfg.optim.epochs - 1):
+        elif epoch == (cfg.optim.epochs - 1):
             torch.save({k: v.cpu() for k, v in net.state_dict().items()}, log_dir / "dino_v2_proto_last_epoch.pth")
             logger.info("Last epoch, model saved!")
 

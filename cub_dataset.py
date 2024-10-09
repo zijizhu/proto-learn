@@ -133,7 +133,7 @@ class CUBFewShotDataset(ImageFolder):
 
         self.samples = []
         for label, class_sampels in label_to_paths.items():
-            self.samples += [(s, label,) for s in random.sample(class_sampels, k=n_samples_per_class)]
+            self.samples += [(sample, label,) for sample in random.sample(class_sampels, k=n_samples_per_class)]
 
     def __getitem__(self, index: int):
         im_path, label = self.samples[index]

@@ -11,7 +11,7 @@ import torchvision.transforms as T
 from einops import rearrange, repeat
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 from torch import nn
-from torch.utils.data import DataLoader, SequentialSampler
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
@@ -23,13 +23,14 @@ from eval.concept_trustworthiness import (
     get_activation_maps,
 )
 from eval.consistency import evaluate_consistency
+from eval.stability import evaluate_stability
 from models.backbone import DINOv2Backbone, DINOv2BackboneExpanded, MaskCLIP
 from models.dino import PCA, PaPr, ProtoDINO
 from utils.config import load_config_and_logging
 from utils.visualization import (
     visualize_prototype_assignments,
     visualize_prototype_part_keypoints,
-    visualize_topk_prototypes,
+    visualize_gt_class_prototypes,
 )
 
 N_KEYPOINTS = 15
@@ -186,15 +187,16 @@ def eval_accuracy(model: nn.Module, dataloader: DataLoader, writer: SummaryWrite
 
     for i, batch in enumerate(tqdm(dataloader)):
         batch = tuple(item.to(device) for item in batch)
-        images, transformed_keypoints, labels, attributes, sample_indices = batch
+        images, labels  = batch[:2]
+        sample_indices = batch[-1]
+
         outputs = model(images, labels=labels)
 
         if i % vis_every_n_batch == 0 and writer is not None:
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
-            visualize_topk_prototypes(outputs, batch_im_paths, writer,
-                                      tag_fmt_str="Top{topk} prototype/eval/batch {step}/{idx}", step=i)
+            visualize_gt_class_prototypes(outputs, batch_im_paths, labels, writer, tag=f"Ground True Prototypes Eval Batch{i}", use_pooling=True)
             visualize_prototype_assignments(outputs, writer, step=i,
-                                            tag=f"Evaluation prototype assignments/batch {i}")
+                                            tag=f"Eval prototype assignments/batch {i}")
 
         mca_eval(outputs["class_logits"], labels)
 
@@ -207,7 +209,8 @@ def push_forward(self: ProtoDINO, x: torch.Tensor):
     prototype_logits = self.__call__(x, labels=None)["patch_prototype_logits"]
     batch_size, n_patches, C, K = prototype_logits.shape
     H = W = int(sqrt(n_patches))
-    return None, rearrange(prototype_logits, "B (H W) C K -> B (C K) H W", H=H, W=W)
+    prototype_logits = rearrange(prototype_logits, "B (H W) C K -> B (C K) H W", H=H, W=W)
+    return None, F.avg_pool2d(prototype_logits, kernel_size=(2, 2,), stride=2)
 
 
 def main():
@@ -219,7 +222,7 @@ def main():
 
     L.seed_everything(cfg.seed)
     
-    n_classes = 200
+    n_classes, n_attributes = 200, 112
     dataset_dir = Path("datasets") / "cub200_cropped"
     annotations_path = Path("datasets") / "CUB_200_2011"
 
@@ -228,7 +231,12 @@ def main():
     
     if "dino" in cfg.model.name:
         if cfg.model.n_splits and cfg.model.n_splits > 0:
-            backbone = DINOv2BackboneExpanded(name=cfg.model.name, n_splits=cfg.model.n_splits)
+            backbone = DINOv2BackboneExpanded(
+                name=cfg.model.name,
+                n_splits=cfg.model.n_splits,
+                mode=cfg.model.tuning,
+                freeze_norm_layer=cfg.model.get("freeze_norm", True)
+            )
         else:
             backbone = DINOv2Backbone(name=cfg.model.name)
         dim = backbone.dim
@@ -243,7 +251,7 @@ def main():
         fg_extractor = PaPr(bg_class=n_classes, **cfg.model.fg_extractor_args)
     else:
         fg_extractor = PCA(bg_class=n_classes, **cfg.model.fg_extractor_args)
-    n_attributes = 112
+
     net = ProtoDINO(
         backbone=backbone,
         dim=dim,
@@ -265,10 +273,10 @@ def main():
     net.eval()
     net.to(device)
     
-    # writer = SummaryWriter(log_dir=log_dir)
+    writer = SummaryWriter(log_dir=log_dir)
 
-    # logger.info("Evaluating accuracy...")
-    # eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
+    logger.info("Evaluating accuracy...")
+    eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
     
     # logger.info("Evaluating class-wise NMI and ARI...")
     # mean_nmi, mean_ari = eval_nmi_ari(net=net, dataloader=dataloader_eval, device=device)
@@ -284,9 +292,13 @@ def main():
     args.test_batch_size = 64
     args.nb_classes = 200
 
-    # logger.info("Evaluating consistency...")
-    # consistency_score = evaluate_consistency(net, args, save_dir=log_dir)
-    # logger.info(f"Network consistency score: {consistency_score.item()}")
+    logger.info("Evaluating consistency...")
+    consistency_score = evaluate_consistency(net, args, save_dir=log_dir)
+    logger.info(f"Network consistency score: {consistency_score.item()}")
+
+    logger.info("Evaluating stability...")
+    consistency_score = evaluate_stability(net, args)
+    logger.info(f"Network stability score: {consistency_score.item()}")
 
     if cfg.get("concept_learning", False):
         logger.info("Evaluating concept trustworthiness...")

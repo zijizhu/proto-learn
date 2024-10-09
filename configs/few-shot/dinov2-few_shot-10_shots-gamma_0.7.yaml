@@ -1,0 +1,37 @@
+model:
+  name: dinov2_vitb14_reg4
+  tuning: block_expansion
+  n_splits: 3
+  gamma: 0.7
+  n_prototypes: 5
+  temperature: 0.2
+  cls_head: sa
+  sa_init: 0.5
+  fg_extractor: PCA
+  fg_extractor_args:
+    compare_fn: le
+    threshold: 0.5
+  losses:
+    l_patch_coef: 0
+    l_orth_coef: 0
+    l_clst_coef: 0
+    l_sep_coef: 0
+    l_aux_coef: 0
+  always_optimize_prototypes: false
+dataset:
+  augmentation: true
+optim:
+  optimizer: null
+  epochs: 1
+  backbone_lr: 0
+  cls_lr: 0
+  aux_lr: null
+  scheduler: null
+  fine_tuning_epochs:
+  - 1
+debug:
+  epochs:
+  - 0
+seed: 42
+few_shot:
+  n_samples: 10

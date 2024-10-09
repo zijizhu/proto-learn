@@ -3,13 +3,14 @@ from pathlib import Path
 
 import cv2
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
 import numpy as np
 import torch
-import torchvision.transforms.functional as F
+import torch.nn.functional as F
 from einops import rearrange
+from matplotlib.patches import Rectangle
 from PIL import Image
 from torch.utils.tensorboard import SummaryWriter
+from torchvision.transforms.functional import pil_to_tensor
 
 
 def overlay_attn_map(attn_map: np.ndarray, im: Image.Image):
@@ -25,6 +26,56 @@ def overlay_attn_map(attn_map: np.ndarray, im: Image.Image):
     heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
 
     return (0.5 * heatmap + 0.5 * im).astype(np.uint8)
+
+def visualize_gt_class_prototypes(batch_outputs: dict[str, torch.Tensor],
+                                  batch_im_paths: list[str],
+                                  labels: torch.Tensor,
+                                  writer: SummaryWriter,
+                                  tag: str,
+                                  *,
+                                  use_pooling: bool = False,
+                                  input_size: int = 224):
+    batch_size, n_patches, C, K = batch_outputs["patch_prototype_logits"].shape
+    H = W = int(sqrt(n_patches))
+
+    batch_im_prototype_logits = batch_outputs["image_prototype_logits"][torch.arange(batch_size), labels, :]
+    batch_im_prototype_logits = batch_im_prototype_logits.cpu().numpy()
+
+    batch_attn_maps = rearrange(batch_outputs["patch_prototype_logits"].detach(), "B (H W) C K -> B C K H W", H=H, W=W)
+    batch_gt_attn_maps = batch_attn_maps[torch.arange(batch_size), labels, :, :, :]  # B K H W
+    if use_pooling:
+        batch_gt_attn_maps = F.avg_pool2d(batch_gt_attn_maps, kernel_size=(2, 2,), stride=2)
+
+    figures = []
+    for b, (gt_attn_maps, im_prototype_logits, y, im_path) in enumerate(zip(batch_gt_attn_maps, batch_im_prototype_logits, labels, batch_im_paths)):
+        gt_attn_maps = rearrange(gt_attn_maps, "K H W -> H W K")
+        src_im = Image.open(im_path).convert("RGB").resize((input_size, input_size,))
+
+        gt_attn_maps_resized_np = cv2.resize(
+            gt_attn_maps.cpu().numpy(),
+            (input_size, input_size,),
+            interpolation=cv2.INTER_LINEAR
+        )
+        overlayed_images = [overlay_attn_map(gt_attn_maps_resized_np[:, :, i], src_im) for i in range(K)]
+
+        fig, axes = plt.subplots(1, K, figsize=(K+2, 2))
+        for ax, im, logit in zip(axes.flat, overlayed_images, im_prototype_logits):
+            ax.imshow(im)
+            ax.set_xticks([]), ax.set_yticks([])
+            ax.set_title(f"logit: {logit:.2f}")
+        
+        fname = Path(im_path).stem
+        fig.suptitle(f"class{y}/{fname}")
+        fig.tight_layout()
+
+        fig.canvas.draw()
+        fig_image = Image.frombuffer('RGBa', fig.canvas.get_width_height(), fig.canvas.buffer_rgba()).convert("RGB")
+        plt.close(fig=fig)
+
+        figures.append(fig_image)
+        writer.add_image("/".join([tag, b]), pil_to_tensor(fig_image))
+
+    return figures
 
 
 def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
@@ -75,7 +126,7 @@ def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
         figures.append(fig_image)
 
         fmt_items = dict(step=step, topk=topk, idx=b)
-        writer.add_image(tag_fmt_str.format(**fmt_items), F.pil_to_tensor(fig_image))
+        writer.add_image(tag_fmt_str.format(**fmt_items), pil_to_tensor(fig_image))
 
     return figures
 
@@ -105,7 +156,7 @@ def visualize_prototype_assignments(outputs: dict[str, torch.Tensor],writer: Sum
     fig_image = Image.frombuffer('RGBa', fig.canvas.get_width_height(), fig.canvas.buffer_rgba()).convert("RGB")
     plt.close(fig=fig)
     
-    writer.add_image(tag, F.pil_to_tensor(fig_image), global_step=step)
+    writer.add_image(tag, pil_to_tensor(fig_image), global_step=step)
     
     return fig_image
 
@@ -149,5 +200,5 @@ def visualize_prototype_part_keypoints(im_path: str, activation_maps: torch.Tens
     fig_image = Image.frombuffer('RGBa', fig.canvas.get_width_height(), fig.canvas.buffer_rgba()).convert("RGB")
     plt.close(fig=fig)
     
-    writer.add_image(f"Prototype Part Keypoints/{sample_id}", F.pil_to_tensor(fig_image))
+    writer.add_image(f"Prototype Part Keypoints/{sample_id}", pil_to_tensor(fig_image))
     return fig_image
