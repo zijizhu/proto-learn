@@ -13,8 +13,8 @@ model:
     threshold: 0.5
   losses:
     l_patch_coef: 0
-    l_patch_clst: 0.8
-    l_patch_sep: 0.08
+    l_patch_clst_coef: 0.8
+    l_patch_sep_coef: 0.08
     l_orth_coef: 0
     l_clst_coef: 0
     l_sep_coef: 0

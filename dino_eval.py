@@ -264,7 +264,7 @@ def main():
         n_attributes=n_attributes,
         norm_prototypes=cfg.model.get("norm_prototypes", False)
     )
-    state_dict = torch.load(log_dir / "dino_v2_proto.pth", map_location="cpu")
+    state_dict = torch.load(log_dir / "dino_v2_proto_last_epoch.pth", map_location="cpu")
     net.load_state_dict(state_dict=state_dict, strict=False)
     
     net.optimizing_prototypes = False
