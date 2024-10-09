@@ -222,7 +222,7 @@ def main():
             optimizer = None
             net.optimizing_prototypes = True
 
-        if (epoch > 0) or (resume_ckpt is not None):
+        if (epoch > 0) or (resume_ckpt is not None) or (not cfg.get("few_shot", False)):
             net.initializing = False
 
         print_parameters(net=net, logger=logger)
