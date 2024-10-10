@@ -39,7 +39,7 @@ def visualize_gt_class_prototypes(batch_outputs: dict[str, torch.Tensor],
     H = W = int(sqrt(n_patches))
 
     batch_im_prototype_logits = batch_outputs["image_prototype_logits"][torch.arange(batch_size), labels, :]
-    batch_im_prototype_logits = batch_im_prototype_logits.cpu().numpy()
+    batch_im_prototype_logits = batch_im_prototype_logits.detach().cpu().numpy()
 
     batch_attn_maps = rearrange(batch_outputs["patch_prototype_logits"].detach(), "B (H W) C K -> B C K H W", H=H, W=W)
     batch_gt_attn_maps = batch_attn_maps[torch.arange(batch_size), labels, :, :, :]  # B K H W
@@ -52,7 +52,7 @@ def visualize_gt_class_prototypes(batch_outputs: dict[str, torch.Tensor],
         src_im = Image.open(im_path).convert("RGB").resize((input_size, input_size,))
 
         gt_attn_maps_resized_np = cv2.resize(
-            gt_attn_maps.cpu().numpy(),
+            gt_attn_maps.detach().cpu().numpy(),
             (input_size, input_size,),
             interpolation=cv2.INTER_LINEAR
         )
