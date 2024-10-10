@@ -73,7 +73,7 @@ def visualize_gt_class_prototypes(batch_outputs: dict[str, torch.Tensor],
         plt.close(fig=fig)
 
         figures.append(fig_image)
-        writer.add_image("/".join([tag, b]), pil_to_tensor(fig_image))
+        writer.add_image("/".join([str(tag), str(b)]), pil_to_tensor(fig_image))
 
     return figures
 
