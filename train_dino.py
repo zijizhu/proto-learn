@@ -13,12 +13,16 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from torchmetrics.classification import MulticlassAccuracy
 from tqdm import tqdm
 
-from models.dino import ProtoDINO, ProtoPNetLoss, PaPr, PCA
-from models.backbone import DINOv2BackboneExpanded, MaskCLIP, DINOv2Backbone
-from cub_dataset import CUBDataset, CUBFewShotDataset, CUBConceptDataset
-from utils.visualization import visualize_prototype_assignments, visualize_topk_prototypes, visualize_gt_class_prototypes
-from utils.config import setup_config_and_logging
+from cub_dataset import CUBConceptDataset, CUBDataset, CUBFewShotDataset
+from models.backbone import DINOv2Backbone, DINOv2BackboneExpanded, MaskCLIP
+from models.dino import PCA, PaPr, ProtoDINO, ProtoPNetLoss
 from models.utils import print_parameters
+from utils.config import setup_config_and_logging
+from utils.visualization import (
+    visualize_gt_class_prototypes,
+    visualize_prototype_assignments,
+    visualize_topk_prototypes,
+)
 
 
 def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataLoader, epoch: int,

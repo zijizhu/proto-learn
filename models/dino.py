@@ -1,10 +1,19 @@
 from math import sqrt
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from einops import einsum, rearrange, repeat
+from scipy.optimize import linear_sum_assignment
 from torch import nn
-from torchvision.models import resnet18, ResNet18_Weights, mobilenet_v3_small, MobileNet_V3_Small_Weights
+from torch.utils.data import DataLoader
+from torchvision.models import (
+    MobileNet_V3_Small_Weights,
+    ResNet18_Weights,
+    mobilenet_v3_small,
+    resnet18,
+)
+from tqdm import tqdm
 
 from models.utils import momentum_update, sinkhorn_knopp
 
@@ -92,6 +101,7 @@ class ProtoDINO(nn.Module):
 
         self.dim = dim
         self.register_buffer("prototypes", torch.randn(self.C, self.n_prototypes, self.dim))
+        self.register_buffer("prototypes_global", torch.randn(self.n_prototypes, self.dim))
         self.temperature = temperature
 
         nn.init.trunc_normal_(self.prototypes, std=0.02)
@@ -151,7 +161,6 @@ class ProtoDINO(nn.Module):
         P_new = prototypes.clone()
 
         part_assignment_maps = torch.empty_like(patch_labels_flat)
-        L_c_dict = dict()  # type: dict[str, torch.Tensor]
         
         for c in patch_labels.unique().tolist():
             class_fg_mask = patch_labels_flat == c  # shape: [B*H*W,]
@@ -168,7 +177,53 @@ class ProtoDINO(nn.Module):
 
             part_assignment_maps[class_fg_mask] = L_c_assignment_indices + c * K
 
-            L_c_dict[c] = L_c_assignment
+        part_assignment_maps = rearrange(part_assignment_maps, "(B H W) -> B (H W)", B=B, H=H, W=W)
+
+        return part_assignment_maps, P_new
+    
+    @staticmethod
+    def online_clustering_global(prototypes: torch.Tensor,
+                                 patch_tokens: torch.Tensor,
+                                 patch_labels: torch.Tensor,
+                                 bg_class: float | torch.Tensor,
+                                 *,
+                                 gamma: float = 0.999,
+                                 use_gumbel: bool = False):
+        """Updates the prototypes based on the given inputs.
+        This function updates the prototypes based on the patch tokens,
+        patch-prototype logits, labels, and patch labels.
+
+        Args:
+            prototypes (torch.Tensor): A tensor of shape [C, K, dim,], representing K prototypes for each of C classes.
+            patch_tokens: A tensor of shape [B, n_patches, dim,], which is the feature from backbone.
+            patch_prototype_logits: The logits between patches and prototypes of shape [B, n_patches, C, K].
+            patch_labels: A tensor of shape [B, H, W,] of type torch.long representing the (generated) patch-level class labels.
+            labels: A tensor of shape [B,] of type torch.long representing the image-level class labels.
+            gamma: A float indicating the coefficient for momentum update.
+            use_gumbel: A boolean indicating whether to use gumbel softmax for patch assignments.
+        """
+        B, H, W = patch_labels.shape
+
+        patch_labels_flat = patch_labels.flatten()  # shape: [B*H*W,]
+        patches_flat = rearrange(patch_tokens, "B n_patches dim -> (B n_patches) dim")
+
+        P_old = prototypes.clone()
+        P_new = prototypes.clone()
+
+        part_assignment_maps = torch.empty_like(patch_labels_flat)
+
+        fg_mask = patch_labels_flat != bg_class  # shape: [B*H*W,]
+        I_fg = patches_flat[fg_mask]  # shape: [N, dim]
+
+        L = I_fg @ prototypes.T  # N K
+
+        L_c_assignment, L_c_assignment_indices = sinkhorn_knopp(L, use_gumbel=use_gumbel)  # shape: [N, K,], [N,]
+
+        P_new = torch.mm(L_c_assignment.t(), I_fg)  # shape: [K, dim]
+
+        P_new = momentum_update(P_old, P_new, momentum=gamma)
+
+        part_assignment_maps[fg_mask] = L_c_assignment_indices
 
         part_assignment_maps = rearrange(part_assignment_maps, "(B H W) -> B (H W)", B=B, H=H, W=W)
 
@@ -227,16 +282,6 @@ class ProtoDINO(nn.Module):
         )
 
         if labels is not None:
-            # if self.initializing:
-            #     if isinstance(self.fg_extractor, PaPr):
-            #         pseudo_patch_labels = self.fg_extractor(x, labels)
-            #     else:
-            #         pseudo_patch_labels = self.fg_extractor(patch_tokens_norm.detach(), labels)
-            # else:
-            #     pseudo_patch_labels = self.get_fg_by_similarity(
-            #         patch_prototype_logits=patch_prototype_logits.detach(),
-            #         labels=labels
-            #     )
             original_patch_tokens_norm = F.normalize(original_patch_tokens, p=2, dim=-1)
             pseudo_patch_labels = self.fg_extractor(original_patch_tokens_norm.detach(), labels)
             pseudo_patch_labels = pseudo_patch_labels.detach()
@@ -250,17 +295,60 @@ class ProtoDINO(nn.Module):
                 gamma=self.gamma,
                 use_gumbel=use_gumbel
             )
+            
+            part_assignment_maps_global, new_prototypes_global = self.online_clustering_global(
+                prototypes=self.prototypes_global,
+                patch_tokens=patch_tokens_norm.detach(),
+                patch_labels=pseudo_patch_labels,
+                bg_class=self.C - 1,
+                gamma=self.gamma,
+                use_gumbel=use_gumbel
+            )
 
             if self.training and self.optimizing_prototypes:
                 self.prototypes = F.normalize(new_prototypes, p=2, dim=-1) if self.norm_prototypes else new_prototypes
+                self.prototypes_global = F.normalize(new_prototypes_global, p=2, dim=-1) if self.norm_prototypes else new_prototypes_global
 
             outputs.update(dict(
                 patches=patch_tokens_norm,
                 part_assignment_maps=part_assignment_maps,  # B n_patches
-                pseudo_patch_labels=pseudo_patch_labels  # B H W
+                pseudo_patch_labels=pseudo_patch_labels,  # B H W
+                part_assignment_maps_global=part_assignment_maps_global
             ))
 
         return outputs
+
+
+def assign_prototype_semantics(model: nn.Module, dataloader: DataLoader, device: torch.device):
+    model.train()
+    C, K, D = model.prototypes_global.shape
+
+    prototype_to_part_count = torch.zeros(C, K, K, device=device, dtype=torch.float32)
+    for i, batch in enumerate(tqdm(dataloader)):
+        batch = tuple(item.to(device) for item in batch)
+        images, labels  = batch[:2]
+
+        outputs = model(images, labels=labels)
+        assignment_maps_global = outputs["part_assignment_maps_global"].flatten()  # B * n_patches
+        assignment_maps = outputs["part_assignment_maps"]  # B * n_patches
+        fg_mask = outputs["pseudo_patch_labels"].flatten()  # B * H * W
+
+        for class_id in range(C):
+            mask = fg_mask == class_id
+            in_class_assignments = F.one_hot(assignment_maps_global[mask], num_classes=K)  # N_c K
+            global_assignments = F.one_hot(assignment_maps[mask], num_classes=K)  # N_c K
+            prototype_to_part_count[class_id, :, :] += in_class_assignments.T @ global_assignments
+
+    model.register_buffer("prototype_to_part_count", prototype_to_part_count)
+
+    prototype_to_part_count_np = prototype_to_part_count.detach().cpu().numpy()
+    prototype_semantics_np = np.zeros(C, K, device=device, dtype=torch.float32)
+
+    for c, cost_matrix in enumerate(prototype_to_part_count_np):
+        row_ind, col_ind = linear_sum_assignment(cost_matrix)
+        prototype_semantics_np[c, :] = col_ind
+    
+    model.register_buffer("prototype_semantics", torch.tensor(prototype_semantics_np, dtype=torch.long, device=device))
 
 
 class ProtoPNetLoss(nn.Module):

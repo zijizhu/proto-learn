@@ -1,30 +1,32 @@
+import random
 from math import sqrt
+from pathlib import Path
 from typing import Callable
 
 import lightning as L
 import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
+import torchvision.transforms as T
 from einops import repeat
 from PIL import Image
 from torch import nn
-
-from pathlib import Path
 from torch.utils.data import DataLoader
-import torchvision.transforms as T
-from cub_dataset import CUBDataset
+from torchvision.models import ConvNeXt_Base_Weights, convnext_base
 
+from cub_dataset import CUBDataset
+from models.backbone import MaskCLIP
 from models.utils import sinkhorn_knopp
 
 #### Constants ####
 MEAN = (0.485, 0.456, 0.406,)
 STD = (0.229, 0.224, 0.225,)
 INPUT_SIZE = 224
-BATCH_SIZE = 16
+BATCH_SIZE = 49
 
 N_PROTOTYPES = 5
 DIM = 384
-GAMMA = 0.2  # coefficient of OLD value
+GAMMA = 0.99  # coefficient of OLD value
 
 CLASS_ID = 15
 N_ITER = BATCH_SIZE
@@ -35,7 +37,7 @@ NCOLS = NROWS = int(sqrt(BATCH_SIZE))
 def get_foreground_by_PCA(patch_tokens: torch.Tensor,
                           labels: torch.Tensor,
                           pca_threshold: float = 0.5,
-                          pca_compare_fn: Callable = torch.le,
+                          pca_compare_fn: Callable = torch.ge,
                           bg_label: int = 200):
     B, n_patches, dim = patch_tokens.shape
     H = W = int(sqrt(n_patches))
@@ -80,15 +82,27 @@ if __name__ == "__main__":
     def get_features(net: nn.Module, x: torch.tensor):
         features = net.forward_features(x)['x_norm_patchtokens']  # type: torch.Tensor
         return features
-
+    
     net = torch.hub.load('facebookresearch/dinov2', "dinov2_vits14_reg")
+    # import timm
+    # @torch.no_grad()
+    # def get_features(net: nn.Module, x: torch.tensor):
+    #     return net(x)
+    # # net = timm.create_model('vit_base_patch16_224.mae', pretrained=True)
+    # net = MaskCLIP(name="ViT-L/14")
+    # net = net.eval()
     #### Initialize model ####
 
-    class_subset = [(path, label,) for (path, label,) in dataset_train.samples if label == CLASS_ID]
-    class_subset = class_subset[:BATCH_SIZE]
+    # class_subset = [(path, label,) for (path, label,) in dataset_train.samples if label == CLASS_ID]
+    # class_subset = class_subset[:BATCH_SIZE]
 
-    images = torch.stack([transforms(Image.open(path)) for (path, label,) in class_subset])
+    samples = random.sample(dataset_train.samples, 49)
+    images = torch.stack([transforms(Image.open(path)) for (path, label,) in samples])
     labels = torch.full((BATCH_SIZE,), CLASS_ID, dtype=torch.long)
+
+
+    # images = torch.stack([transforms(Image.open(path)) for (path, label,) in class_subset])
+    # labels = torch.full((BATCH_SIZE,), CLASS_ID, dtype=torch.long)
 
     prototypes = torch.empty((N_PROTOTYPES, DIM,), dtype=torch.float32)
     nn.init.trunc_normal_(prototypes, std=0.02)
@@ -125,5 +139,5 @@ if __name__ == "__main__":
 
         # Update prototypes
         prototypes_new = torch.mm(L_optimized.t(), fg_patches_flat_norm)
-        prototypes = 0.1 * prototypes + 0.9 * F.normalize(prototypes_new, p=2, dim=-1)
+        prototypes = 0.99 * prototypes + 0.01 * F.normalize(prototypes_new, p=2, dim=-1)
     plt.show()
