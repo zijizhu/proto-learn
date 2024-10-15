@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from cub_dataset import CUBConceptDataset, CUBDataset, CUBFewShotDataset
 from models.backbone import DINOv2Backbone, DINOv2BackboneExpanded, MaskCLIP
-from models.dino import PCA, PaPr, ProtoDINO, ProtoPNetLoss
+from models.dino import PCA, PaPr, ProtoDINO, ProtoPNetLoss, assign_prototype_semantics
 from models.utils import print_parameters
 from utils.config import setup_config_and_logging
 from utils.visualization import (
@@ -138,6 +138,10 @@ def main():
                                    transforms=transforms)
         dataloader_train = DataLoader(dataset=dataset_train, batch_size=128, num_workers=8, shuffle=True)
     
+    dataset_assignment = CUBDataset((dataset_dir / "train_cropped").as_posix(),
+                                    transforms=transforms)
+    dataloader_assignment = DataLoader(dataset=dataset_assignment, batch_size=128, num_workers=8, shuffle=True)
+    
     dataset_test = CUBDataset((dataset_dir / "test_cropped").as_posix(),
                               transforms=transforms)
     dataloader_test = DataLoader(dataset=dataset_test, batch_size=128, num_workers=8, shuffle=True)
@@ -244,6 +248,9 @@ def main():
             device=device,
             debug=is_debugging
         )
+
+        if epoch == 0:
+            assign_prototype_semantics(model=net, dataloader=dataloader_assignment, device=device)
 
         if is_fine_tuning:
             lr_coef *= lr_coef

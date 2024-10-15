@@ -19,6 +19,6 @@ declare -a filenames=(
 
 for f in "${filenames[@]}"
 do
-  python train_dino.py --base_log_dir logs-10-10 --config_path "configs/$f.yaml"
-  python dino_eval.py --log_dir "logs-10-10/$f"
+  python train_dino.py --base_log_dir logs-16-10 --config_path "configs/$f.yaml"
+  python dino_eval.py --log_dir "logs-16-10/$f"
 done

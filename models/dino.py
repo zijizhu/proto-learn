@@ -335,12 +335,11 @@ def assign_prototype_semantics(model: nn.Module, dataloader: DataLoader, device:
         images, labels  = batch[:2]
 
         outputs = model(images, labels=labels)
-        print(outputs["part_assignment_maps_global"].min())
         assignment_maps_global = outputs["part_assignment_maps_global"].flatten()  # B * n_patches
         assignment_maps = outputs["part_assignment_maps"].flatten()  # B * n_patches
         fg_mask = outputs["pseudo_patch_labels"].flatten()  # B * H * W
 
-        for class_id in range(C):
+        for class_id in labels.unique():
             mask = fg_mask == class_id
             in_class_assignments = F.one_hot(torch.remainder(assignment_maps[mask], K), num_classes=K).to(dtype=torch.float32)  # N_c K
             global_assignments = F.one_hot(assignment_maps_global[mask], num_classes=K).to(dtype=torch.float32)  # N_c K
@@ -349,7 +348,7 @@ def assign_prototype_semantics(model: nn.Module, dataloader: DataLoader, device:
     model.register_buffer("prototype_to_part_count", prototype_to_part_count)
 
     prototype_to_part_count_np = prototype_to_part_count.detach().cpu().numpy()
-    prototype_semantics_np = np.zeros(C, K, device=device, dtype=torch.float32)
+    prototype_semantics_np = np.zeros((C, K,), dtype=int)
 
     for c, cost_matrix in enumerate(prototype_to_part_count_np):
         row_ind, col_ind = linear_sum_assignment(cost_matrix)
