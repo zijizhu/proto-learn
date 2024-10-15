@@ -184,6 +184,7 @@ class ProtoDINO(nn.Module):
     @staticmethod
     def online_clustering_global(prototypes: torch.Tensor,
                                  patch_tokens: torch.Tensor,
+                                 patch_global_prototype_logits: torch.Tensor,
                                  patch_labels: torch.Tensor,
                                  bg_class: float | torch.Tensor,
                                  *,
@@ -203,25 +204,25 @@ class ProtoDINO(nn.Module):
             use_gumbel: A boolean indicating whether to use gumbel softmax for patch assignments.
         """
         B, H, W = patch_labels.shape
+        K, dim = prototypes.shape
 
         patch_labels_flat = patch_labels.flatten()  # shape: [B*H*W,]
         patches_flat = rearrange(patch_tokens, "B n_patches dim -> (B n_patches) dim")
 
         P_old = prototypes.clone()
-        P_new = prototypes.clone()
 
-        part_assignment_maps = torch.empty_like(patch_labels_flat)
+        part_assignment_maps = torch.full_like(patch_labels_flat, K)
 
         fg_mask = patch_labels_flat != bg_class  # shape: [B*H*W,]
         I_fg = patches_flat[fg_mask]  # shape: [N, dim]
 
-        L = I_fg @ prototypes.T  # N K
+        L = rearrange(patch_global_prototype_logits, "B N K -> (B N) K")[fg_mask] # N K
 
         L_c_assignment, L_c_assignment_indices = sinkhorn_knopp(L, use_gumbel=use_gumbel)  # shape: [N, K,], [N,]
 
-        P_new = torch.mm(L_c_assignment.t(), I_fg)  # shape: [K, dim]
+        P_update = torch.mm(L_c_assignment.t(), I_fg)  # shape: [K, dim]
 
-        P_new = momentum_update(P_old, P_new, momentum=gamma)
+        P_new = momentum_update(P_old, P_update, momentum=gamma)
 
         part_assignment_maps[fg_mask] = L_c_assignment_indices
 
@@ -295,10 +296,13 @@ class ProtoDINO(nn.Module):
                 gamma=self.gamma,
                 use_gumbel=use_gumbel
             )
-            
+            global_prototype_norm = F.normalize(self.prototypes_global, p=2, dim=-1)
+            patch_global_prototype_logits = einsum(patch_tokens_norm, global_prototype_norm, "B n_patches dim, K dim -> B n_patches K")
+
             part_assignment_maps_global, new_prototypes_global = self.online_clustering_global(
                 prototypes=self.prototypes_global,
                 patch_tokens=patch_tokens_norm.detach(),
+                patch_global_prototype_logits=patch_global_prototype_logits.detach(),
                 patch_labels=pseudo_patch_labels,
                 bg_class=self.C - 1,
                 gamma=self.gamma,
@@ -319,9 +323,11 @@ class ProtoDINO(nn.Module):
         return outputs
 
 
+@torch.no_grad()
 def assign_prototype_semantics(model: nn.Module, dataloader: DataLoader, device: torch.device):
     model.train()
-    C, K, D = model.prototypes_global.shape
+    model.to(device)
+    C, K, D = model.prototypes.shape
 
     prototype_to_part_count = torch.zeros(C, K, K, device=device, dtype=torch.float32)
     for i, batch in enumerate(tqdm(dataloader)):
@@ -329,14 +335,15 @@ def assign_prototype_semantics(model: nn.Module, dataloader: DataLoader, device:
         images, labels  = batch[:2]
 
         outputs = model(images, labels=labels)
+        print(outputs["part_assignment_maps_global"].min())
         assignment_maps_global = outputs["part_assignment_maps_global"].flatten()  # B * n_patches
-        assignment_maps = outputs["part_assignment_maps"]  # B * n_patches
+        assignment_maps = outputs["part_assignment_maps"].flatten()  # B * n_patches
         fg_mask = outputs["pseudo_patch_labels"].flatten()  # B * H * W
 
         for class_id in range(C):
             mask = fg_mask == class_id
-            in_class_assignments = F.one_hot(assignment_maps_global[mask], num_classes=K)  # N_c K
-            global_assignments = F.one_hot(assignment_maps[mask], num_classes=K)  # N_c K
+            in_class_assignments = F.one_hot(torch.remainder(assignment_maps[mask], K), num_classes=K).to(dtype=torch.float32)  # N_c K
+            global_assignments = F.one_hot(assignment_maps_global[mask], num_classes=K).to(dtype=torch.float32)  # N_c K
             prototype_to_part_count[class_id, :, :] += in_class_assignments.T @ global_assignments
 
     model.register_buffer("prototype_to_part_count", prototype_to_part_count)

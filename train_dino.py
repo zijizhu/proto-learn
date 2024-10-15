@@ -20,8 +20,7 @@ from models.utils import print_parameters
 from utils.config import setup_config_and_logging
 from utils.visualization import (
     visualize_gt_class_prototypes,
-    visualize_prototype_assignments,
-    visualize_topk_prototypes,
+    visualize_prototype_assignments
 )
 
 

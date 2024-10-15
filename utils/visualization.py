@@ -146,7 +146,7 @@ def visualize_prototype_assignments(outputs: dict[str, torch.Tensor],writer: Sum
         
         assign_map = torch.remainder(assign_map, K)
         fg_assign_map = torch.where(fg_mask, assign_map, torch.full_like(assign_map, -1))
-        fg_assign_map = rearrange(fg_assign_map, " (H W) -> H W", H=H, W=W)
+        fg_assign_map = rearrange(fg_assign_map, "(H W) -> H W", H=H, W=W)
 
         ax.imshow((fg_assign_map + 1).numpy(), cmap="tab10")
         ax.set_xticks([]), ax.set_yticks([])

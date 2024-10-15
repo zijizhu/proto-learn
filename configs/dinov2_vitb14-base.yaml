@@ -1,7 +1,7 @@
 model:
   name: dinov2_vitb14_reg4
   tuning: block_expansion
-  n_splits: 3
+  n_splits: 1
   gamma: 0.99
   n_prototypes: 5
   temperature: 0.2
@@ -17,19 +17,20 @@ model:
     l_clst_coef: 0
     l_sep_coef: 0
     l_aux_coef: 0
+    use_similarities: true
   always_optimize_prototypes: false
 dataset:
   augmentation: true
 optim:
-  optimizer: null
+  optimizer: Adam
   epochs: 1
   backbone_lr: 0
   cls_lr: 0
   aux_lr: null
+  lr_decay: 0
   scheduler: null
-  fine_tuning_epochs:
-  - 1
+  fine_tuning_epochs: []
 debug:
   epochs:
-  - 0
+    - 0
 seed: 42
