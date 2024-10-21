@@ -24,9 +24,9 @@ STD = (0.229, 0.224, 0.225,)
 INPUT_SIZE = 224
 BATCH_SIZE = 49
 
-N_PROTOTYPES = 5
+N_PROTOTYPES = 2
 DIM = 384
-GAMMA = 0.99  # coefficient of OLD value
+GAMMA = 0.999  # coefficient of OLD value
 
 CLASS_ID = 15
 N_ITER = BATCH_SIZE
@@ -109,7 +109,8 @@ if __name__ == "__main__":
 
     all_features = get_features(net, images)  # shape: [BATCH_SIZE, HW, DIM]
     all_fg_maps = get_foreground_by_PCA(patch_tokens=all_features, labels=labels)  # shape: [BATCH_SIZE, H, W,]
-    all_fg_masks = all_fg_maps == CLASS_ID
+    # all_fg_masks = all_fg_maps == CLASS_ID
+    all_fg_masks = torch.full((BATCH_SIZE, 16, 16,), True)
 
     fig, axes = plt.subplots(NCOLS, NROWS)
     for i, (patch_tokens, fg_mask, ax) in enumerate(zip(all_features, all_fg_masks, axes.flatten())):
@@ -122,7 +123,12 @@ if __name__ == "__main__":
         L = cos_similarities[fg_mask.flatten(), :]
         fg_patches_flat_norm = patch_tokens_norm[fg_mask.flatten(), :]
 
-        L_optimized, indices = sinkhorn_knopp(L)  # shape: [N_FG, N_PROTOTYPES,], [N_FG,]
+        indices = torch.max(L, dim=-1).indices
+        L_optimized = L
+
+        # L_optimized, indices = sinkhorn_knopp(L)  # shape: [N_FG, N_PROTOTYPES,], [N_FG,]
+        print(L_optimized.shape)
+        print(torch.sum(indices))
 
         # Visualization
         L_vis = L_optimized.clone()
@@ -139,5 +145,5 @@ if __name__ == "__main__":
 
         # Update prototypes
         prototypes_new = torch.mm(L_optimized.t(), fg_patches_flat_norm)
-        prototypes = 0.99 * prototypes + 0.01 * F.normalize(prototypes_new, p=2, dim=-1)
+        prototypes = 0.9 * prototypes + 0.1 * F.normalize(prototypes_new, p=2, dim=-1)
     plt.show()
