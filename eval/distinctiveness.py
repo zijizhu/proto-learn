@@ -67,10 +67,11 @@ def get_attn_maps(outputs: dict[str, torch.Tensor], labels: torch.Tensor):
     pooled_logits = F.avg_pool2d(patch_prototype_logits, kernel_size=(2, 2,), stride=2)
     return patch_prototype_logits, pooled_logits
 
-torch.inference_mode()
+@torch.no_grad()
 def evaluate_distinctiveness(net: nn.Module,
                              save_path: str | Path,
                              thresholds: list[float] =  [0.4, 0.5, 0.6, 0.7, 0.8],
+                             num_classes: int = 200,
                              device: torch.device = torch.device("cpu"),
                              input_size: tuple[int, int] = (224, 224,)):
     normalize = T.Normalize(mean=mean, std=std)
@@ -86,8 +87,6 @@ def evaluate_distinctiveness(net: nn.Module,
     net.to(device)
     net.eval()
 
-    N = 200
-
     thresh_to_mean_IoUs = defaultdict(list)
     for b, batch in enumerate(tqdm(test_loader)):
         images, targets, img_ids = tuple(item.to(device=device) for item in batch)
@@ -97,7 +96,7 @@ def evaluate_distinctiveness(net: nn.Module,
         if hasattr(net, 'push_forward'):
             _, all_batch_activations = net.push_forward(images)
             B, KN, H, W = all_batch_activations.shape
-            K = KN // N
+            K = KN // num_classes
             proto_indices = (targets * K).unsqueeze(dim=-1).repeat(1, K)
             proto_indices += torch.arange(K).to(device=device)   # The indexes of prototypes belonging to the ground-truth class of each image
             proto_indices = proto_indices[:, :, None, None].repeat(1, 1, H, W)
@@ -110,7 +109,7 @@ def evaluate_distinctiveness(net: nn.Module,
         for thresh in thresholds:
             thresh_to_mean_IoUs[thresh] += batch_mean_IoU(batch_activations_resized, threshold=thresh)
     
-    np.savez(Path(save_path), **{f"{thresh:.1f}": np.array(values) for thresh, values in thresh_to_mean_IoUs.items()})
+    np.savez(Path(save_path) / "threshold_to_mean_IoUs", **{f"{thresh:.1f}": np.array(values) for thresh, values in thresh_to_mean_IoUs.items()})
         
     thresh_to_scores = defaultdict(float)
     for thresh, mean_IoUs in thresh_to_mean_IoUs.items():

@@ -278,6 +278,24 @@ def main():
     logger.info("Evaluating accuracy...")
     eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
 
+    if cfg.get("concept_learning", False):
+        logger.info("Evaluating concept trustworthiness...")
+        normalize = T.Normalize(mean=(0.485, 0.456, 0.406,), std=(0.229, 0.224, 0.225,))
+
+        transform = T.Compose([
+            T.Resize(size=(224, 224)),
+            T.ToTensor(),
+            normalize,
+            ])
+        concept_loc_dataset_eval = Cub2011Eval(root='datasets/', train=False, transform=transform)
+        concept_loc_dataloader_eval = DataLoader(concept_loc_dataset_eval, shuffle=False, batch_size=150)
+        net.attributes_predictor = net.classifier[0]
+
+        all_activation_maps, all_img_ids = get_activation_maps(net, concept_loc_dataloader_eval)
+        mean_loc_acc, (all_loc_acc, all_attri_idx, all_num_samples) = evaluate_concept_trustworthiness(all_activation_maps, all_img_ids, bbox_half_size=45)
+        logger.info(f"Concept trustworthiness score of the network on the {len(concept_loc_dataset_eval)} test images: {mean_loc_acc:.2f}%")
+        exit(0)
+
     # Monkey-patch the model class to make it compatible with eval script
     ProtoDINO.push_forward = push_forward
     net.img_size = 224
@@ -298,22 +316,7 @@ def main():
     logger.info("Evaluating distinctiveness...")
     evaluate_distinctiveness(net, save_path=log_dir, device=device)
 
-    if cfg.get("concept_learning", False):
-        logger.info("Evaluating concept trustworthiness...")
-        normalize = T.Normalize(mean=(0.485, 0.456, 0.406,), std=(0.229, 0.224, 0.225,))
-
-        transform = T.Compose([
-            T.Resize(size=(224, 224)),
-            T.ToTensor(),
-            normalize,
-            ])
-        concept_loc_dataset_eval = Cub2011Eval(root='datasets/', train=False, transform=transform)
-        concept_loc_dataloader_eval = DataLoader(concept_loc_dataset_eval, shuffle=False, batch_size=150)
-        net.attributes_predictor = net.classifier[0]
-
-        all_activation_maps, all_img_ids = get_activation_maps(net, concept_loc_dataloader_eval)
-        mean_loc_acc, (all_loc_acc, all_attri_idx, all_num_samples) = evaluate_concept_trustworthiness(all_activation_maps, all_img_ids, bbox_half_size=45)
-        logger.info(f"Concept trustworthiness score of the network on the {len(concept_loc_dataset_eval)} test images: {mean_loc_acc:.2f}%")
+    
     if cfg.get("part_segmentation", False):
         logger.info("Evaluating part segmentation...")
         # logger.info("Evaluating class-wise NMI and ARI...")
