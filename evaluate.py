@@ -24,6 +24,7 @@ from eval.concept_trustworthiness import (
 )
 from eval.consistency import evaluate_consistency
 from eval.stability import evaluate_stability
+from eval.distinctiveness import evaluate_distinctiveness
 from models.backbone import DINOv2Backbone, DINOv2BackboneExpanded, MaskCLIP
 from models.dino import PCA, PaPr, ProtoDINO
 from utils.config import load_config_and_logging
@@ -276,11 +277,6 @@ def main():
 
     logger.info("Evaluating accuracy...")
     eval_accuracy(model=net, dataloader=dataloader_eval, writer=writer, logger=logger, device=device, vis_every_n_batch=5)
-    
-    # logger.info("Evaluating class-wise NMI and ARI...")
-    # mean_nmi, mean_ari = eval_nmi_ari(net=net, dataloader=dataloader_eval, device=device)
-    # logger.info(f"Mean class-wise NMI: {float(mean_nmi)}")
-    # logger.info(f"Mean class-wise ARI: {float(mean_ari)}")
 
     # Monkey-patch the model class to make it compatible with eval script
     ProtoDINO.push_forward = push_forward
@@ -298,6 +294,9 @@ def main():
     logger.info("Evaluating stability...")
     consistency_score = evaluate_stability(net, args)
     logger.info(f"Network stability score: {consistency_score.item()}")
+
+    logger.info("Evaluating distinctiveness...")
+    evaluate_distinctiveness(net, save_path=log_dir, device=device)
 
     if cfg.get("concept_learning", False):
         logger.info("Evaluating concept trustworthiness...")
@@ -317,6 +316,10 @@ def main():
         logger.info(f"Concept trustworthiness score of the network on the {len(concept_loc_dataset_eval)} test images: {mean_loc_acc:.2f}%")
     if cfg.get("part_segmentation", False):
         logger.info("Evaluating part segmentation...")
+        # logger.info("Evaluating class-wise NMI and ARI...")
+        # mean_nmi, mean_ari = eval_nmi_ari(net=net, dataloader=dataloader_eval, device=device)
+        # logger.info(f"Mean class-wise NMI: {float(mean_nmi)}")
+        # logger.info(f"Mean class-wise ARI: {float(mean_ari)}")
         raise NotImplementedError
 
 

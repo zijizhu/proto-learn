@@ -321,6 +321,19 @@ class ProtoDINO(nn.Module):
             ))
 
         return outputs
+    
+    def get_attn_maps(self, images: torch.Tensor, labels: torch.Tensor):
+        outputs = self(images, labels)
+        patch_prototype_logits = outputs["patch_prototype_logits"]
+
+        batch_size, n_patches, C, K = patch_prototype_logits.shape
+        H = W = int(sqrt(n_patches))
+
+        patch_prototype_logits = rearrange(patch_prototype_logits, "B (H W) C K -> B C K H W", H=H, W=W)
+        patch_prototype_logits = patch_prototype_logits[torch.arange(labels.numel()), labels, ...]  # B K H W
+
+        pooled_logits = F.avg_pool2d(patch_prototype_logits, kernel_size=(2, 2,), stride=2)
+        return patch_prototype_logits, pooled_logits
 
 
 @torch.no_grad()
