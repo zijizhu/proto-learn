@@ -11,8 +11,10 @@ from einops import rearrange
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from torchvision.ops import box_convert, box_iou
 
-from .utils import Cub2011Eval, mean, std
+from .datasets import Cub2011Eval
+from .preprocess import mean, std
 
 logger = getLogger(__name__)
 
@@ -54,6 +56,30 @@ def batch_mean_IoU(batch_activations: torch.Tensor, threshold: float = 0.7):
 
     return mean_IoUs
 
+def batch_mean_IoU_bbox(batch_activations: torch.Tensor, bbox_size: int = 56):
+    B, K, H, W = batch_activations.shape
+    iou_matrix_mask = torch.ones((K, K,)).triu(diagonal=1).to(dtype=torch.bool, device=batch_activations.device)
+    mean_IoUs = []
+
+    _, indices = F.adaptive_max_pool2d(batch_activations, output_size=(1, 1,), return_indices=True)
+    cy, cx = torch.unravel_index(indices, (H, W,))
+    cxcy = torch.stack([cy.squeeze(), cx.squeeze()], dim=-1)
+    box_hw = torch.full_like(cxcy, bbox_size)
+    batch_boxes_cxcywh = torch.cat([cxcy, box_hw], dim=-1)
+
+    for boxes_cxcywh in batch_boxes_cxcywh:
+        iou_matrix = torch.zeros((K, K,), device=batch_activations.device)
+        boxes_xyxy = box_convert(boxes_cxcywh, in_fmt="cxcywh", out_fmt="xyxy")
+
+        for i in range(K):
+            for j in range(i + 1, K):
+                iou_matrix[i, j] = box_iou(boxes_xyxy[i].unsqueeze(0), boxes_xyxy[j].unsqueeze(0)).squeeze().item()
+
+        iou_matrix_triu = iou_matrix[iou_matrix_mask]
+        mean_IoUs.append(iou_matrix_triu.mean().item())
+
+    return mean_IoUs
+
 @torch.no_grad()
 def get_attn_maps(outputs: dict[str, torch.Tensor], labels: torch.Tensor):
     patch_prototype_logits = outputs["patch_prototype_logits"]
@@ -71,6 +97,7 @@ def get_attn_maps(outputs: dict[str, torch.Tensor], labels: torch.Tensor):
 def evaluate_distinctiveness(net: nn.Module,
                              save_path: str | Path,
                              thresholds: list[float] =  [0.4, 0.5, 0.6, 0.7, 0.8],
+                             topk: int = 4,
                              num_classes: int = 200,
                              device: torch.device = torch.device("cpu"),
                              input_size: tuple[int, int] = (224, 224,)):
@@ -93,21 +120,26 @@ def evaluate_distinctiveness(net: nn.Module,
         B, _, INPUT_H, INPUT_W = images.shape
         if hasattr(net, 'get_attn_maps'):
             _, batch_activations = net.get_attn_maps(images, targets)
-        if hasattr(net, 'push_forward'):
+        elif hasattr(net, 'push_forward'):
             _, all_batch_activations = net.push_forward(images)
-            B, KN, H, W = all_batch_activations.shape
-            K = KN // num_classes
+            B, CK, H, W = all_batch_activations.shape
+            K = CK // num_classes
             proto_indices = (targets * K).unsqueeze(dim=-1).repeat(1, K)
             proto_indices += torch.arange(K).to(device=device)   # The indexes of prototypes belonging to the ground-truth class of each image
             proto_indices = proto_indices[:, :, None, None].repeat(1, 1, H, W)
-            batch_activations = torch.gather(all_batch_activations, 1, proto_indices) # (B, proto_per_class, fea_size, fea_size)
+            gt_batch_activations = torch.gather(all_batch_activations, 1, proto_indices) # (B, proto_per_class, fea_size, fea_size)
+
+            max_vals = F.adaptive_max_pool2d(gt_batch_activations, output_size=(1, 1,))
+            topk_batch_activations = torch.gather(gt_batch_activations, 1, max_vals.topk(dim=1, k=topk).indices.repeat(1, 1, H, W))
+
+            batch_activations = F.avg_pool2d(topk_batch_activations, kernel_size=(2, 2,), stride=2)
         else:
             outputs = net(images, targets)
             batch_activations = get_attn_maps(outputs, labels=targets)
         batch_activations_resized = F.interpolate(batch_activations, size=(INPUT_H, INPUT_W,), mode="bilinear")
 
-        for thresh in thresholds:
-            thresh_to_mean_IoUs[thresh] += batch_mean_IoU(batch_activations_resized, threshold=thresh)
+        for thresh in [72, 90]:
+            thresh_to_mean_IoUs[thresh] += batch_mean_IoU_bbox(batch_activations_resized, bbox_size=thresh)
     
     np.savez(Path(save_path) / "threshold_to_mean_IoUs", **{f"{thresh:.1f}": np.array(values) for thresh, values in thresh_to_mean_IoUs.items()})
         
