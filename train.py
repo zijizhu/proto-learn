@@ -82,11 +82,11 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
 
         if debug and i == len(dataloader) - 1:
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
-            figures = visualize_gt_class_prototypes_as_images(outputs, batch_im_paths, labels, writer, use_pooling=True)
+            figures = visualize_gt_class_prototypes_as_images(outputs, batch_im_paths, labels, use_pooling=True)
             for i, fig in enumerate(figures):
-                writer.add_image(f"Validation first batch prototype assignments/epoch {epoch}", pil_to_tensor(fig), global_step=i)
+                writer.add_image(f"Validation batch prototype assignments/epoch {epoch}", pil_to_tensor(fig), global_step=i)
             fig_image = visualize_prototype_assignments(outputs, writer, step=epoch, return_image=True)
-            writer.add_image(f"Validation first batch prototype assignments/epoch {epoch}", pil_to_tensor(fig_image), global_step=epoch)
+            writer.add_image(f"Validation batch prototype assignments/epoch {epoch}", pil_to_tensor(fig_image), global_step=epoch)
 
     epoch_acc_val = mca_val.compute().item()
     writer.add_scalar("Acc/val", epoch_acc_val, epoch)
