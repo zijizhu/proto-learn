@@ -15,11 +15,12 @@ from tqdm import tqdm
 
 from cub_dataset import CUBConceptDataset, CUBDataset, CUBFewShotDataset
 from models.backbone import DINOv2Backbone, DINOv2BackboneExpanded, MaskCLIP
+from torchvision.transforms.functional import pil_to_tensor
 from models.dino import PCA, PaPr, ProtoDINO, ProtoPNetLoss, assign_prototype_semantics
 from models.utils import print_parameters
 from utils.config import setup_config_and_logging
 from utils.visualization import (
-    visualize_gt_class_prototypes,
+    visualize_gt_class_prototypes_as_images,
     visualize_prototype_assignments
 )
 
@@ -34,7 +35,6 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
     for i, batch in enumerate(tqdm(dataloader)):
         batch = tuple(item.to(device) for item in batch)
         images, labels  = batch[:2]
-        sample_indices = batch[-1]
 
         outputs = model(images, labels=labels)
 
@@ -52,13 +52,8 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
         mca_train(outputs["class_logits"], labels)
 
         if debug and i == len(dataloader) - 1:
-            batch_size, _, input_size, input_size = images.shape
-            batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
-            # visualize_topk_prototypes(outputs, batch_im_paths, writer, step=epoch, input_size=input_size,
-            #                           tag_fmt_str="Training first batch top{topk} prototypes/epoch {step}/{idx}")
-            visualize_gt_class_prototypes(outputs, batch_im_paths, labels, writer, tag=f"Ground True Prototypes Train Epoch{epoch}", use_pooling=True)
-            visualize_prototype_assignments(outputs, writer, step=epoch,
-                                            tag=f"Training first batch prototype assignments/epoch {epoch}")
+            fig_image = visualize_prototype_assignments(outputs, writer, step=epoch, return_image=True)
+            writer.add_image(f"Training first batch prototype assignments/epoch {epoch}", pil_to_tensor(fig_image), global_step=epoch)
 
     for k, v in running_losses.items():
         loss_avg = v / len(dataloader.dataset)
@@ -86,13 +81,12 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
         mca_val(outputs["class_logits"], labels)
 
         if debug and i == len(dataloader) - 1:
-            batch_size, input_size, input_size = images.shape
             batch_im_paths = [dataloader.dataset.samples[idx][0] for idx in sample_indices.tolist()]
-            # visualize_topk_prototypes(outputs, batch_im_paths, writer, step=epoch, input_size=input_size,
-            #                           tag_fmt_str="Validation epoch {step} batch 0 top{topk} prototypes/{idx}")
-            visualize_gt_class_prototypes(outputs, batch_im_paths, labels, writer, tag=f"Ground True Prototypes Val Epoch{epoch}", use_pooling=True)
-            visualize_prototype_assignments(outputs, labels, writer, step=epoch,
-                                            tag=f"Validation epoch {epoch} batch {i} prototype assignments")
+            figures = visualize_gt_class_prototypes_as_images(outputs, batch_im_paths, labels, writer, use_pooling=True)
+            for i, fig in enumerate(figures):
+                writer.add_image(f"Validation first batch prototype assignments/epoch {epoch}", pil_to_tensor(fig), global_step=i)
+            fig_image = visualize_prototype_assignments(outputs, writer, step=epoch, return_image=True)
+            writer.add_image(f"Validation first batch prototype assignments/epoch {epoch}", pil_to_tensor(fig_image), global_step=epoch)
 
     epoch_acc_val = mca_val.compute().item()
     writer.add_scalar("Acc/val", epoch_acc_val, epoch)

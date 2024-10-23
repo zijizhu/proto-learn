@@ -1,3 +1,4 @@
+import os
 from math import sqrt
 from pathlib import Path
 
@@ -27,14 +28,12 @@ def overlay_attn_map(attn_map: np.ndarray, im: Image.Image):
 
     return (0.5 * heatmap + 0.5 * im).astype(np.uint8)
 
-def visualize_gt_class_prototypes(batch_outputs: dict[str, torch.Tensor],
-                                  batch_im_paths: list[str],
-                                  labels: torch.Tensor,
-                                  writer: SummaryWriter,
-                                  tag: str,
-                                  *,
-                                  use_pooling: bool = False,
-                                  input_size: int = 224):
+def visualize_gt_class_prototypes_as_images(batch_outputs: dict[str, torch.Tensor],
+                                            batch_im_paths: list[str],
+                                            labels: torch.Tensor,
+                                            *,
+                                            use_pooling: bool = False,
+                                            input_size: int = 224) -> list[Image.Image]:
     batch_size, n_patches, C, K = batch_outputs["patch_prototype_logits"].shape
     H = W = int(sqrt(n_patches))
 
@@ -73,9 +72,49 @@ def visualize_gt_class_prototypes(batch_outputs: dict[str, torch.Tensor],
         plt.close(fig=fig)
 
         figures.append(fig_image)
-        writer.add_image("/".join([str(tag), str(b)]), pil_to_tensor(fig_image))
 
     return figures
+
+
+def visualize_gt_class_prototypes(batch_outputs: dict[str, torch.Tensor],
+                                  batch_im_paths: list[str],
+                                  labels: torch.Tensor,
+                                  *,
+                                  use_pooling: bool = True,
+                                  input_size: int = 224,
+                                  max_rows: int = 8) -> list[Image.Image]:
+    batch_size, n_patches, C, K = batch_outputs["patch_prototype_logits"].shape
+    H = W = int(sqrt(n_patches))
+
+    batch_im_prototype_logits = batch_outputs["image_prototype_logits"][torch.arange(batch_size), labels, :]
+    batch_im_prototype_logits = batch_im_prototype_logits.detach().cpu().numpy()
+
+    batch_attn_maps = rearrange(batch_outputs["patch_prototype_logits"].detach(), "B (H W) C K -> B C K H W", H=H, W=W)
+    batch_gt_attn_maps = batch_attn_maps[torch.arange(batch_size), labels, :, :, :]  # B K H W
+    if use_pooling:
+        batch_gt_attn_maps = F.avg_pool2d(batch_gt_attn_maps, kernel_size=(2, 2,), stride=2)
+
+    fig = plt.figure(constrained_layout=True, figsize=(8, 12,))
+    subfigures = fig.subfigures(nrows=min(batch_size, max_rows), ncols=1)
+    for (subfig, gt_attn_maps, im_prototype_logits, y, im_path) in zip(subfigures, batch_gt_attn_maps, batch_im_prototype_logits, labels, batch_im_paths):
+        axes = subfig.subplots(nrows=1, ncols=K)
+        gt_attn_maps = rearrange(gt_attn_maps, "K H W -> H W K")
+        src_im = Image.open(im_path).convert("RGB").resize((input_size, input_size,))
+
+        gt_attn_maps_resized_np = cv2.resize(
+            gt_attn_maps.detach().cpu().numpy(),
+            (input_size, input_size,),
+            interpolation=cv2.INTER_LINEAR
+        )
+        overlayed_images = [overlay_attn_map(gt_attn_maps_resized_np[:, :, i], src_im) for i in range(K)]
+
+        for ax, im, logit in zip(axes, overlayed_images, im_prototype_logits):
+            ax.imshow(im)
+            ax.set_xticks([]), ax.set_yticks([])
+            ax.set_title(f"logit: {logit:.2f}")
+        subfig.suptitle(os.path.join(*Path(im_path).parts[-2:]))
+
+    return fig
 
 
 def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
@@ -131,8 +170,7 @@ def visualize_topk_prototypes(batch_outputs: dict[str, torch.Tensor],
     return figures
 
 
-def visualize_prototype_assignments(outputs: dict[str, torch.Tensor],writer: SummaryWriter,
-                                    tag: str, step: int, figsize: tuple[int, int] = (10, 12,)):
+def visualize_prototype_assignments(outputs: dict[str, torch.Tensor], figsize: tuple[int, int] = (10, 12,), return_image: bool = True):
     assignment_maps = outputs["part_assignment_maps"].detach().clone()  # shape:  B (H W)
     batch_size, _, C, K = outputs["patch_prototype_logits"].shape
     batch_size, n_patches = assignment_maps.shape
@@ -151,14 +189,14 @@ def visualize_prototype_assignments(outputs: dict[str, torch.Tensor],writer: Sum
         ax.imshow((fg_assign_map + 1).numpy(), cmap="tab10")
         ax.set_xticks([]), ax.set_yticks([])
     
-    fig.tight_layout()
-    fig.canvas.draw()
-    fig_image = Image.frombuffer('RGBa', fig.canvas.get_width_height(), fig.canvas.buffer_rgba()).convert("RGB")
-    plt.close(fig=fig)
-    
-    writer.add_image(tag, pil_to_tensor(fig_image), global_step=step)
-    
-    return fig_image
+    if return_image:
+        fig.tight_layout()
+        fig.canvas.draw()
+        fig_image = Image.frombuffer('RGBa', fig.canvas.get_width_height(), fig.canvas.buffer_rgba()).convert("RGB")
+        plt.close(fig=fig)
+        return fig_image
+
+    return ax
 
 
 def visualize_prototype_part_keypoints(im_path: str, activation_maps: torch.Tensor, keypoints: list[tuple[float, float]],

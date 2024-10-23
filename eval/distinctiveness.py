@@ -13,8 +13,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from torchvision.ops import box_convert, box_iou
 
-from .datasets import Cub2011Eval
-from .preprocess import mean, std
+from .utils import Cub2011Eval, mean, std
 
 logger = getLogger(__name__)
 
@@ -38,7 +37,7 @@ def calculate_iou(mask1: torch.Tensor, mask2: torch.Tensor, eps: float = 1e-6):
     return iou
 
 
-def batch_mean_IoU(batch_activations: torch.Tensor, threshold: float = 0.7):
+def batch_mean_IoU_binary(batch_activations: torch.Tensor, threshold: float = 0.7):
     B, K, H, W = batch_activations.shape
     iou_matrix_mask = torch.ones((K, K,)).triu(diagonal=1).to(dtype=torch.bool, device=batch_activations.device)
 
@@ -97,6 +96,7 @@ def get_attn_maps(outputs: dict[str, torch.Tensor], labels: torch.Tensor):
 def evaluate_distinctiveness(net: nn.Module,
                              save_path: str | Path,
                              thresholds: list[float] =  [0.4, 0.5, 0.6, 0.7, 0.8],
+                             box_sizes: list[int] = [36, 56, 72, 90],
                              topk: int = 4,
                              num_classes: int = 200,
                              device: torch.device = torch.device("cpu"),
@@ -114,7 +114,8 @@ def evaluate_distinctiveness(net: nn.Module,
     net.to(device)
     net.eval()
 
-    thresh_to_mean_IoUs = defaultdict(list)
+    binary_thresh_to_mean_IoUs = defaultdict(list)
+    box_size_to_mean_IoUs = defaultdict(list)
     for b, batch in enumerate(tqdm(test_loader)):
         images, targets, img_ids = tuple(item.to(device=device) for item in batch)
         B, _, INPUT_H, INPUT_W = images.shape
@@ -138,13 +139,31 @@ def evaluate_distinctiveness(net: nn.Module,
             batch_activations = get_attn_maps(outputs, labels=targets)
         batch_activations_resized = F.interpolate(batch_activations, size=(INPUT_H, INPUT_W,), mode="bilinear")
 
-        for thresh in [72, 90]:
-            thresh_to_mean_IoUs[thresh] += batch_mean_IoU_bbox(batch_activations_resized, bbox_size=thresh)
-    
-    np.savez(Path(save_path) / "threshold_to_mean_IoUs", **{f"{thresh:.1f}": np.array(values) for thresh, values in thresh_to_mean_IoUs.items()})
+        for size in box_sizes:
+            box_size_to_mean_IoUs[size] += batch_mean_IoU_bbox(batch_activations_resized, bbox_size=size)
         
-    thresh_to_scores = defaultdict(float)
-    for thresh, mean_IoUs in thresh_to_mean_IoUs.items():
+        for thresh in thresholds:
+            binary_thresh_to_mean_IoUs[thresh] += batch_mean_IoU_binary(batch_activations_resized, threshold=thresh)
+        
+    binary_thresh_to_scores = defaultdict(float)
+    box_size_to_scores = defaultdict(float)
+    for thresh, mean_IoUs in binary_thresh_to_mean_IoUs.items():
         score = 1 - (sum(mean_IoUs) / len(mean_IoUs))
-        thresh_to_scores[thresh] = score
-        logger.info(f"Distinctiveness Score Threshold {thresh:.1f}: {score:.4f}")
+        binary_thresh_to_scores[thresh] = score
+        logger.info(f"Distinctiveness Score with Binary Threshold {thresh:.1f}: {score:.4f}")
+
+    for size, mean_IoUs in box_size_to_mean_IoUs.items():
+        score = 1 - (sum(mean_IoUs) / len(mean_IoUs))
+        box_size_to_scores[thresh] = score
+        logger.info(f"Distinctiveness Score with Box Size {thresh}: {score:.4f}")
+    
+    np.savez(
+        Path(save_path) / "binary_threshold_distinctiveness",
+        **{f"bianry_thresh_{thresh:.1f}_IoUs": np.array(values) for thresh, values in binary_thresh_to_mean_IoUs.items()},
+        **{f"bianry_thresh_{thresh:.1f}_score": np.array(score) for thresh, score in binary_thresh_to_scores}
+    )
+    np.savez(
+        Path(save_path) / "box_distinctiveness",
+        **{f"box_size_{size:.1f}_IoUs": np.array(values) for size, values in box_size_to_mean_IoUs.items()},
+        **{f"box_size_{size:.1f}_score": np.array(score) for size, score in box_size_to_scores}
+    )
