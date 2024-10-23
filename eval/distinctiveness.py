@@ -96,8 +96,8 @@ def get_attn_maps(outputs: dict[str, torch.Tensor], labels: torch.Tensor):
 def evaluate_distinctiveness(net: nn.Module,
                              save_path: str | Path,
                              thresholds: list[float] =  [0.4, 0.5, 0.6, 0.7, 0.8],
-                             box_sizes: list[int] = [36, 56, 72, 90],
-                             topk: int = 4,
+                             box_sizes: list[int] = [90, 72, 56, 36],
+                             topk: int = 5,
                              num_classes: int = 200,
                              device: torch.device = torch.device("cpu"),
                              input_size: tuple[int, int] = (224, 224,)):
@@ -155,15 +155,15 @@ def evaluate_distinctiveness(net: nn.Module,
     for size, mean_IoUs in box_size_to_mean_IoUs.items():
         score = 1 - (sum(mean_IoUs) / len(mean_IoUs))
         box_size_to_scores[thresh] = score
-        logger.info(f"Distinctiveness Score with Box Size {thresh}: {score:.4f}")
+        logger.info(f"Distinctiveness Score with Box Size {size}: {score:.4f}")
     
     np.savez(
         Path(save_path) / "binary_threshold_distinctiveness",
         **{f"bianry_thresh_{thresh:.1f}_IoUs": np.array(values) for thresh, values in binary_thresh_to_mean_IoUs.items()},
-        **{f"bianry_thresh_{thresh:.1f}_score": np.array(score) for thresh, score in binary_thresh_to_scores}
+        **{f"bianry_thresh_{thresh:.1f}_score": np.array(score) for thresh, score in binary_thresh_to_scores.items()}
     )
     np.savez(
         Path(save_path) / "box_distinctiveness",
         **{f"box_size_{size:.1f}_IoUs": np.array(values) for size, values in box_size_to_mean_IoUs.items()},
-        **{f"box_size_{size:.1f}_score": np.array(score) for size, score in box_size_to_scores}
+        **{f"box_size_{size:.1f}_score": np.array(score) for size, score in box_size_to_scores.items()}
     )
