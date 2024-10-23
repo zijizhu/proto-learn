@@ -52,7 +52,7 @@ def train_epoch(model: nn.Module, criterion: nn.Module | None, dataloader: DataL
         mca_train(outputs["class_logits"], labels)
 
         if debug and i == len(dataloader) - 1:
-            fig_image = visualize_prototype_assignments(outputs, writer, step=epoch, return_image=True)
+            fig_image = visualize_prototype_assignments(outputs, return_image=True)
             writer.add_image(f"Training first batch prototype assignments/epoch {epoch}", pil_to_tensor(fig_image), global_step=epoch)
 
     for k, v in running_losses.items():
@@ -85,7 +85,7 @@ def val_epoch(model: nn.Module, dataloader: DataLoader, epoch: int, writer: Summ
             figures = visualize_gt_class_prototypes_as_images(outputs, batch_im_paths, labels, use_pooling=True)
             for i, fig in enumerate(figures):
                 writer.add_image(f"Validation batch prototype assignments/epoch {epoch}", pil_to_tensor(fig), global_step=i)
-            fig_image = visualize_prototype_assignments(outputs, writer, step=epoch, return_image=True)
+            fig_image = visualize_prototype_assignments(outputs, return_image=True)
             writer.add_image(f"Validation batch prototype assignments/epoch {epoch}", pil_to_tensor(fig_image), global_step=epoch)
 
     epoch_acc_val = mca_val.compute().item()
