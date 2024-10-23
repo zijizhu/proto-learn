@@ -9,8 +9,8 @@ declare -a filenames=(
 
 for f in "${filenames[@]}"
 do
-  python train.py --base_log_dir logs-22-10 --config_path "configs/concept/$f.yaml"
-  python evaluate.py --log_dir "logs-22-10/concept/$f"
+  python train.py --base_log_dir 'logs-24-10/concept' --config_path "configs/concept/$f.yaml"
+  python evaluate.py --log_dir "logs-24-10/concept/$f"
 done
 
 declare -a filenames=(
@@ -21,6 +21,6 @@ declare -a filenames=(
 
 for f in "${filenames[@]}"
 do
-  python train.py --base_log_dir logs-22-10 --config_path "configs/$f.yaml"
-  python evaluate.py --log_dir "logs-22-10/$f"
+  python train.py --base_log_dir logs-24-10 --config_path "configs/$f.yaml"
+  python evaluate.py --log_dir "logs-24-10/$f"
 done
